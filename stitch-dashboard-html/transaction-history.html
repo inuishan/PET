@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ledger - Transaction History</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .font-headline { font-family: 'Manrope', sans-serif; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "outline-variant": "#c4c6d0",
+                        "primary-fixed": "#d6e3ff",
+                        "on-error-container": "#93000a",
+                        "inverse-surface": "#2d3133",
+                        "inverse-on-surface": "#eff1f3",
+                        "tertiary-fixed": "#ffddb8",
+                        "primary-fixed-dim": "#adc7f8",
+                        "secondary-fixed": "#85f8c4",
+                        "surface": "#f7f9fb",
+                        "surface-tint": "#455f8a",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#718bb9",
+                        "primary-container": "#00234b",
+                        "on-secondary-fixed-variant": "#005137",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#82f5c1",
+                        "on-surface": "#191c1e",
+                        "tertiary": "#170b00",
+                        "surface-container": "#eceef0",
+                        "outline": "#74777f",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "secondary-fixed-dim": "#68dba9",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "on-tertiary-container": "#c17b00",
+                        "on-tertiary-fixed": "#2a1700",
+                        "secondary": "#006c4a",
+                        "on-background": "#191c1e",
+                        "primary": "#000e24",
+                        "surface-variant": "#e0e3e5",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-secondary-container": "#00714e",
+                        "on-primary-fixed-variant": "#2c4771",
+                        "tertiary-container": "#351e00",
+                        "surface-container-low": "#f2f4f6",
+                        "on-primary-fixed": "#001b3d",
+                        "inverse-primary": "#adc7f8",
+                        "surface-dim": "#d8dadc",
+                        "background": "#f7f9fb",
+                        "error": "#ba1a1a",
+                        "surface-container-high": "#e6e8ea",
+                        "surface-bright": "#f7f9fb",
+                        "on-surface-variant": "#43474e",
+                        "on-secondary-fixed": "#002114"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface">
+<!-- TopAppBar -->
+<header class="sticky top-0 z-40 bg-[#f7f9fb] dark:bg-[#000e24]">
+<div class="flex items-center justify-between px-6 py-4 w-full max-w-7xl mx-auto">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Close-up studio portrait of a professional man with clean lighting and neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYr5XgulfWsjN0nM4jZ6XLEoqFHcUWQQ-qVM3ivs7jZNYD8WSlsFjnlc_vYM6Fw4JTllPPUAfjrl2maW-4Y-E1aECqCtTmozCRhYLz_rm6bDADvEBCVUohEiTkZB2S0KswCMxvvNc8NWo8qsU_hTxX6n0O1M4B4OPwfw8xkQkCQgCKKUIC3Vi4LF3AxdZGnjaVkJHYWjd4nbr0CH-RMtB-RE0jsKxH91E5wN-oHpuEYoI_ES1-c90F_vjMIDKq0SedvmcL3UuP5Rs"/>
+</div>
+<h1 class="font-headline font-bold text-3xl text-[#000e24] dark:text-white tracking-tight">Ledger</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full hover:bg-[#f2f4f6] dark:hover:bg-[#00234b] transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[#000e24] dark:text-white">search</span>
+</button>
+<button class="p-2 rounded-full hover:bg-[#f2f4f6] dark:hover:bg-[#00234b] transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[#000e24] dark:text-white">notifications</span>
+</button>
+</div>
+</div>
+</header>
+<main class="max-w-7xl mx-auto px-6 pb-32">
+<!-- Search & Filters -->
+<section class="py-8 space-y-6">
+<div class="relative w-full">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-on-surface-variant">search</span>
+</div>
+<input class="w-full bg-surface-container-highest border-none rounded-xl py-4 pl-12 pr-4 text-on-surface placeholder-on-surface-variant focus:ring-2 focus:ring-surface-tint/40 transition-shadow" placeholder="Search by vendor..." type="text"/>
+</div>
+<div class="flex flex-wrap gap-3 items-center">
+<div class="flex gap-2 items-center bg-surface-container-low px-4 py-2 rounded-full">
+<span class="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">Category:</span>
+<button class="text-sm font-medium hover:text-secondary transition-colors">All</button>
+<button class="text-sm font-medium text-secondary">Food</button>
+<button class="text-sm font-medium hover:text-secondary transition-colors">Travel</button>
+<button class="text-sm font-medium hover:text-secondary transition-colors">Utility</button>
+</div>
+<div class="flex gap-2 items-center bg-surface-container-low px-4 py-2 rounded-full">
+<span class="text-xs font-semibold uppercase tracking-widest text-on-surface-variant">Period:</span>
+<button class="text-sm font-medium hover:text-secondary transition-colors">October</button>
+<button class="text-sm font-medium text-secondary">November</button>
+</div>
+</div>
+</section>
+<!-- Transaction List -->
+<div class="space-y-12">
+<!-- Group: Today -->
+<section class="space-y-4">
+<div class="flex justify-between items-end border-b border-outline-variant/15 pb-2">
+<h2 class="font-headline text-lg font-bold text-on-surface">Today</h2>
+<span class="text-xs font-semibold text-on-surface-variant uppercase tracking-widest">Nov 14, 2023</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="group bg-surface-container-lowest p-6 rounded-xl shadow-[0px_12px_32px_rgba(25,28,30,0.04)] hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center text-primary font-bold text-xl">B</div>
+<div>
+<h3 class="font-bold text-on-surface">Blue Tokai Coffee</h3>
+<p class="text-xs text-on-surface-variant font-medium">Food &amp; Dining</p>
+</div>
+</div>
+<div class="text-right">
+<div class="font-headline font-bold text-lg text-primary">-₹380.00</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase">Processed</div>
+</div>
+</div>
+<div class="flex items-center gap-3 pt-4 border-t border-outline-variant/15">
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant">Me</span>
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant uppercase">HDFC Visa</span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="group bg-surface-container-lowest p-6 rounded-xl shadow-[0px_12px_32px_rgba(25,28,30,0.04)] hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">directions_car</span>
+</div>
+<div>
+<h3 class="font-bold text-on-surface">Uber India</h3>
+<p class="text-xs text-on-surface-variant font-medium">Travel</p>
+</div>
+</div>
+<div class="text-right">
+<div class="font-headline font-bold text-lg text-primary">-₹1,240.50</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase">Processed</div>
+</div>
+</div>
+<div class="flex items-center gap-3 pt-4 border-t border-outline-variant/15">
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant">Wife</span>
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant uppercase">UPI</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Group: Yesterday -->
+<section class="space-y-4">
+<div class="flex justify-between items-end border-b border-outline-variant/15 pb-2">
+<h2 class="font-headline text-lg font-bold text-on-surface">Yesterday</h2>
+<span class="text-xs font-semibold text-on-surface-variant uppercase tracking-widest">Nov 13, 2023</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Card 3 -->
+<div class="group bg-surface-container-lowest p-6 rounded-xl shadow-[0px_12px_32px_rgba(25,28,30,0.04)] hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">shopping_bag</span>
+</div>
+<div>
+<h3 class="font-bold text-on-surface">Zara DLF Mall</h3>
+<p class="text-xs text-on-surface-variant font-medium">Lifestyle</p>
+</div>
+</div>
+<div class="text-right">
+<div class="font-headline font-bold text-lg text-primary">-₹8,990.00</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded-full bg-tertiary-container text-on-tertiary-container text-[10px] font-bold uppercase">Flagged</div>
+</div>
+</div>
+<div class="flex items-center gap-3 pt-4 border-t border-outline-variant/15">
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant">Wife</span>
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant uppercase">Amex Gold</span>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="group bg-surface-container-lowest p-6 rounded-xl shadow-[0px_12px_32px_rgba(25,28,30,0.04)] hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-4">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center text-primary font-bold text-xl">A</div>
+<div>
+<h3 class="font-bold text-on-surface">Amazon.in</h3>
+<p class="text-xs text-on-surface-variant font-medium">Utility</p>
+</div>
+</div>
+<div class="text-right">
+<div class="font-headline font-bold text-lg text-primary">-₹4,200.00</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase">Processed</div>
+</div>
+</div>
+<div class="flex items-center gap-3 pt-4 border-t border-outline-variant/15">
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant">Me</span>
+<span class="px-2 py-1 rounded bg-surface-container text-[10px] font-semibold text-on-surface-variant uppercase">ICICI Amazon Pay</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Asymmetric Summary Highlight (Editorial Touch) -->
+<section class="mt-16 grid grid-cols-1 md:grid-cols-12 gap-8 items-center bg-primary text-white rounded-[2rem] p-10 overflow-hidden relative">
+<div class="md:col-span-7 space-y-4 z-10">
+<p class="text-sm font-semibold uppercase tracking-[0.2em] opacity-60">Month-to-Date Spending</p>
+<h2 class="font-headline text-5xl md:text-6xl font-extrabold tracking-tight">₹42,840.20</h2>
+<p class="text-lg opacity-80 max-w-md font-body">Your expenditure is 12% lower than the same period last October. Good progress on your liquidity goals.</p>
+</div>
+<div class="md:col-span-5 relative z-10 flex justify-end">
+<div class="w-full max-w-[240px] aspect-square bg-secondary rounded-full flex items-center justify-center relative shadow-2xl overflow-hidden">
+<img alt="Financial Growth" class="w-full h-full object-cover mix-blend-overlay opacity-50" data-alt="Abstract macro shot of golden coins reflecting deep emerald green light in a minimalist professional setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgab3COQCeacq-rQ1-KFbfI2yRyUgHg2OyUDOz4jIuVWnSSruMFeNNxCkQgKceh-UL8SUxbhjUTAm4f7bJ7K17h2INYVnGy_T46CWmju_fYZb-D7gdWdcIjjKZwXjbisjFF-zgIJUrTrVbF8PPF6JYEfOADIUccVne7TGBtNUmrRCHTbdS302ymbOXw1W86zIxGP8kxMSgL5X2DLQsMtmKU_Fi-yQcYBTdMFbTLWf-74iK-tdQLwVHabqAju09fgWRoKm58mVJzwA"/>
+<span class="material-symbols-outlined text-6xl text-white absolute">trending_down</span>
+</div>
+</div>
+<!-- Decorative Background Element -->
+<div class="absolute -right-20 -top-20 w-80 h-80 bg-primary-container rounded-full blur-[100px] opacity-30"></div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 bg-[#ffffff]/80 dark:bg-[#000e24]/80 backdrop-blur-xl border-t border-[#c4c6d0]/15 shadow-[0px_-12px_32px_rgba(25,28,30,0.04)] px-4 pb-6 pt-3 flex justify-around items-center">
+<!-- Ledger (Active) -->
+<button class="flex flex-col items-center justify-center text-[#006c4a] dark:text-[#82f5c1] font-bold transition-transform active:scale-90 tap-highlight-none">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_balance_wallet</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-1">Ledger</span>
+</button>
+<!-- Insights -->
+<button class="flex flex-col items-center justify-center text-[#43474e] dark:text-slate-400 opacity-60 hover:opacity-100 transition-opacity active:scale-90 tap-highlight-none">
+<span class="material-symbols-outlined">insert_chart</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-1">Insights</span>
+</button>
+<!-- Vault -->
+<button class="flex flex-col items-center justify-center text-[#43474e] dark:text-slate-400 opacity-60 hover:opacity-100 transition-opacity active:scale-90 tap-highlight-none">
+<span class="material-symbols-outlined">lock</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-1">Vault</span>
+</button>
+<!-- Settings -->
+<button class="flex flex-col items-center justify-center text-[#43474e] dark:text-slate-400 opacity-60 hover:opacity-100 transition-opacity active:scale-90 tap-highlight-none">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-widest mt-1">Settings</span>
+</button>
+</nav>
+</body></html>
