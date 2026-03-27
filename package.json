@@ -11,6 +11,8 @@
     "mobile:test": "npm --prefix apps/mobile run test",
     "mobile:test:coverage": "npm --prefix apps/mobile run test:coverage",
     "mobile:lint": "npm --prefix apps/mobile run lint",
+    "phase-1:smoke": "node ./scripts/phase-1/run-smoke-test.mjs",
+    "phase-1:validate-runtime": "node ./scripts/phase-1/validate-runtime-config.mjs",
     "test:phase-1": "node --experimental-strip-types --loader ./tests/support/mobile-loader.mjs --test $(find tests -type f \\( -name '*.test.js' -o -name '*.test.mjs' \\))"
   }
 }

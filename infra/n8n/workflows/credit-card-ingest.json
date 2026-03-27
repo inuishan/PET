@@ -23,50 +23,17 @@
       }
     },
     {
-      "id": "prepare-context",
-      "name": "Prepare Statement Context",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        -680,
-        120
-      ],
-      "parameters": {
-        "keepOnlySet": false,
-        "values": {
-          "string": [
-            {
-              "name": "householdId",
-              "value": "replace-with-household-uuid"
-            },
-            {
-              "name": "providerFileId",
-              "value": "={{$json.id}}"
-            },
-            {
-              "name": "providerFileName",
-              "value": "={{$json.name}}"
-            },
-            {
-              "name": "parserProfileName",
-              "value": "replace-with-card-profile"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "lookup-password-key",
-      "name": "Lookup Password Key",
+      "id": "resolve-statement-routing",
+      "name": "Resolve Statement Routing",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -430,
+        -520,
         120
       ],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const passwordMap = JSON.parse($env.CARD_PASSWORD_MAP_JSON || '{}');\nconst parserProfileName = $json.parserProfileName;\nreturn [{ json: { ...$json, statementPasswordKey: passwordMap[parserProfileName] || null } }];"
+        "jsCode": "const providerFileName = String($json.name || '').trim();\nconst providerFileId = String($json.id || '').trim();\nconst defaultHouseholdId = String($env.STATEMENT_HOUSEHOLD_ID || '').trim();\nconst routingRules = JSON.parse($env.STATEMENT_FILE_ROUTING_JSON || '[]');\n\nif (!providerFileName) {\n  throw new Error('Drive trigger payload is missing the file name.');\n}\n\nif (!providerFileId) {\n  throw new Error('Drive trigger payload is missing the file id.');\n}\n\nif (!Array.isArray(routingRules) || routingRules.length === 0) {\n  throw new Error('STATEMENT_FILE_ROUTING_JSON must define at least one routing rule.');\n}\n\nconst matchedRule = routingRules.find((rule) => {\n  const pattern = String(rule?.fileNamePattern || '').trim();\n\n  if (!pattern) {\n    return false;\n  }\n\n  return new RegExp(pattern, 'i').test(providerFileName);\n});\n\nif (!matchedRule) {\n  throw new Error(`No statement routing rule matched ${providerFileName}.`);\n}\n\nconst householdId = String(matchedRule.householdId || defaultHouseholdId || '').trim();\nconst parserProfileName = String(matchedRule.parserProfileName || '').trim();\n\nif (!householdId) {\n  throw new Error(`No household id is configured for ${providerFileName}.`);\n}\n\nif (!parserProfileName) {\n  throw new Error(`No parser profile is configured for ${providerFileName}.`);\n}\n\nreturn [{\n  json: {\n    ...$json,\n    bankName: matchedRule.bankName || null,\n    cardName: matchedRule.cardName || null,\n    householdId,\n    parserProfileName,\n    providerFileId,\n    providerFileName,\n    statementPasswordKey: matchedRule.statementPasswordKey || null,\n  },\n}];"
       }
     },
     {
@@ -120,7 +87,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { statement: { householdId: $json.householdId, providerFileId: $json.providerFileId, providerFileName: $json.providerFileName, parserProfileName: $json.parserProfileName }, document: { extractedText: $json.stdout } } }}"
+        "jsonBody": "={{ { statement: { householdId: $json.householdId, providerFileId: $json.providerFileId, providerFileName: $json.providerFileName, parserProfileName: $json.parserProfileName, bankName: $json.bankName, cardName: $json.cardName }, document: { extractedText: $json.stdout } } }}"
       }
     },
     {
@@ -146,7 +113,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{$json.data}}",
+        "jsonBody": "={{ { ...$json.data, statement: { ...$json.data.statement, statementPasswordKey: $item(0).$node[\"Resolve Statement Routing\"].json.statementPasswordKey } } }}",
         "options": {
           "timeout": 30000,
           "retry": {
@@ -175,25 +142,14 @@
       "main": [
         [
           {
-            "node": "Prepare Statement Context",
+            "node": "Resolve Statement Routing",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Statement Context": {
-      "main": [
-        [
-          {
-            "node": "Lookup Password Key",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Lookup Password Key": {
+    "Resolve Statement Routing": {
       "main": [
         [
           {

@@ -16,3 +16,6 @@ Native mobile household expense-tracking app planning workspace.
 
 ## Primary document
 - See `docs/expense-tracker-prd.md` for the current PRD and open questions.
+
+## Phase 1 operations
+- Runtime setup and smoke-test runbook: `docs/phase-1-runtime-runbook.md`
