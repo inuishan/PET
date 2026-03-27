@@ -13,6 +13,72 @@ Set these for the n8n instance:
 - `CARD_PASSWORD_MAP_JSON`: JSON object mapping parser profiles or file patterns to password secret keys.
 - `PDF_TEXT_EXTRACT_COMMAND`: Local command that reads the downloaded PDF and prints extracted text. It must support password-backed PDFs.
 
+## Local PDF extraction helper
+
+This repo now includes a local helper at `infra/n8n/bin/extract-pdf-text.mjs`.
+
+Set `PDF_TEXT_EXTRACT_COMMAND` to invoke it from the machine where n8n runs:
+
+```bash
+export PDF_TEXT_EXTRACT_COMMAND="node /absolute/path/to/repo/infra/n8n/bin/extract-pdf-text.mjs"
+```
+
+The helper keeps the CLI surface narrow:
+
+- It reads the PDF from `stdin`.
+- It accepts either raw PDF bytes or the base64 payload from n8n binary data.
+- It accepts an optional `--password-key <key>`.
+- It writes extracted plain text to `stdout`.
+- It writes explicit operational failures to `stderr` and exits non-zero.
+
+### Local machine requirements
+
+Install these tools on the same machine that runs n8n:
+
+- `pdftotext` from Poppler for text extraction.
+- `qpdf` for unlocking password-protected PDFs without placing raw passwords on the process command line.
+- `node` to run the helper script.
+
+If `pdftotext` or `qpdf` are not on `PATH`, point the helper at them with:
+
+- `PDFTOTEXT_BIN=/absolute/path/to/pdftotext`
+- `QPDF_BIN=/absolute/path/to/qpdf`
+
+### Password-key lookup
+
+The workflow should keep mapping parser profiles to password keys, not to raw passwords:
+
+```bash
+export CARD_PASSWORD_MAP_JSON='{"hdfc-regalia-gold":"cards/hdfc-regalia"}'
+```
+
+The helper resolves the raw password locally by converting the password key into an environment variable name:
+
+- Password key: `cards/hdfc-regalia`
+- Local secret env var: `STATEMENT_PDF_PASSWORD__CARDS_HDFC_REGALIA`
+
+Example:
+
+```bash
+export STATEMENT_PDF_PASSWORD__CARDS_HDFC_REGALIA='replace-with-the-actual-password'
+```
+
+This keeps raw passwords out of:
+
+- workflow JSON
+- n8n execution item data
+- parser requests
+
+### Local smoke test
+
+You can verify the helper outside n8n with:
+
+```bash
+cat statement.pdf | node infra/n8n/bin/extract-pdf-text.mjs --password-key cards/hdfc-regalia
+```
+
+If the statement is not password-protected, omit `--password-key`.
+
 Set these for Supabase edge functions:
 
 - `STATEMENT_PIPELINE_SHARED_SECRET`: Same shared secret used by n8n.
@@ -33,7 +99,7 @@ Set these for Supabase edge functions:
 3. `Lookup Password Key` maps the parser profile to a password key from `CARD_PASSWORD_MAP_JSON`.
 4. `Download PDF` fetches the file from Drive to local disk or an n8n binary property.
 5. `Extract Statement Text` runs `PDF_TEXT_EXTRACT_COMMAND --password-key <key>` so the local helper resolves the actual secret without storing it in workflow execution data.
-6. `Call statement-parse` posts statement metadata plus extracted text to Supabase.
+6. `Call statement-parse` posts statement metadata plus extracted text to Supabase. The password key remains local to the extraction/ingest path and is not forwarded to the parser request.
 7. `Retry Ingest` sends the normalized payload to `statement-ingest` with retries and backoff.
 8. `Handle Failure` records sync failure details in the execution log and triggers a visible alert path.
 
@@ -110,6 +176,7 @@ Set these for Supabase edge functions:
 
 - Raw PDFs stay in Drive. n8n should send only metadata plus extracted text to the parser, and only metadata plus normalized rows to ingest.
 - Passwords are resolved by the local extraction helper from a secret key. The raw password should never be placed in workflow JSON, item data, or sent to the parser endpoint.
+- Password-protected extraction depends on local `qpdf` plus `pdftotext`. Missing tools, missing password-key env vars, wrong passwords, and empty extracted text all fail with explicit helper errors.
 - Unsupported credits, reversals, or refunds are skipped by normalization and recorded in statement metadata.
 - Low-confidence rows are persisted with `needs_review = true` so they remain visible in totals and review flows.
 - The shared secret is required on both endpoints. Do not inline secrets directly into node parameters when n8n credentials or environment variables can hold them.

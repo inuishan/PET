@@ -41,11 +41,14 @@ test('n8n workflow passes only a password key to the extraction command', () => 
   const workflow = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
   const lookupNode = workflow.nodes.find((node) => node.name === 'Lookup Password Key');
   const extractNode = workflow.nodes.find((node) => node.name === 'Extract Statement Text');
+  const callParserNode = workflow.nodes.find((node) => node.name === 'Call statement-parse');
 
   assert.ok(lookupNode);
   assert.ok(extractNode);
+  assert.ok(callParserNode);
   assert.match(lookupNode.parameters.jsCode, /statementPasswordKey/);
   assert.doesNotMatch(lookupNode.parameters.jsCode, /statementPassword\b/);
   assert.match(extractNode.parameters.command, /--password-key/);
   assert.doesNotMatch(extractNode.parameters.command, /--password '/);
+  assert.doesNotMatch(callParserNode.parameters.jsonBody, /statementPasswordKey/);
 });

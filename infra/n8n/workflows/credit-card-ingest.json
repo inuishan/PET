@@ -120,7 +120,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { statement: { householdId: $json.householdId, providerFileId: $json.providerFileId, providerFileName: $json.providerFileName, parserProfileName: $json.parserProfileName, statementPasswordKey: $json.statementPasswordKey }, document: { extractedText: $json.stdout } } }}"
+        "jsonBody": "={{ { statement: { householdId: $json.householdId, providerFileId: $json.providerFileId, providerFileName: $json.providerFileName, parserProfileName: $json.parserProfileName }, document: { extractedText: $json.stdout } } }}"
       }
     },
     {
