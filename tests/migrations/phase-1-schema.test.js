@@ -95,3 +95,17 @@ test('0004_household_invites.sql adds invite-backed onboarding helpers', () => {
   assert.match(migration, /maximum number of members for Phase 1/i);
   assert.match(migration, /jsonb_build_object/i);
 });
+
+test('0005_transaction_review_rpc.sql adds a household-safe transaction review mutation', () => {
+  const migration = readMigration('0005_transaction_review_rpc.sql');
+
+  assert.match(migration, /create or replace function public\.reassign_transaction_category/i);
+  assert.match(migration, /security invoker/i);
+  assert.match(migration, /update public\.transactions/i);
+  assert.match(migration, /next_category\.household_id <> current_transaction\.household_id/i);
+  assert.match(migration, /needs_review = false/i);
+  assert.match(migration, /review_reason = null/i);
+  assert.match(migration, /classification_method = 'manual'/i);
+  assert.match(migration, /insert into public\.classification_events/i);
+  assert.match(migration, /grant execute on function public\.reassign_transaction_category/i);
+});

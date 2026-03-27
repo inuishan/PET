@@ -2,6 +2,7 @@ import { formatShortDate } from '@/features/core-product/core-product-formatting
 import { type CoreProductState, getCategoryById } from '@/features/core-product/core-product-state';
 
 export type TransactionFilter = 'all' | 'needs_review';
+export type TransactionsLedgerState = Pick<CoreProductState, 'categories' | 'transactions'>;
 
 export type TransactionsScreenState = {
   categoryOptions: Array<{
@@ -30,7 +31,7 @@ export type TransactionsScreenState = {
 };
 
 export function buildTransactionsScreenState(
-  state: CoreProductState,
+  state: TransactionsLedgerState,
   filter: TransactionFilter = 'all'
 ): TransactionsScreenState {
   return {
@@ -44,7 +45,7 @@ export function buildTransactionsScreenState(
 }
 
 export function reassignTransactionCategory(
-  state: CoreProductState,
+  state: TransactionsLedgerState,
   transactionId: string,
   nextCategoryId: string
 ) {
@@ -77,7 +78,7 @@ export function reassignTransactionCategory(
 }
 
 function groupTransactions(
-  state: CoreProductState,
+  state: TransactionsLedgerState,
   filter: TransactionFilter
 ): TransactionsScreenState['groups'] {
   const groupedTransactions = new Map<string, TransactionsScreenState['groups'][number]>();
