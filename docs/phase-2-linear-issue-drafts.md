@@ -2,6 +2,11 @@
 
 These issue drafts mirror the Phase 1 Linear structure. They are captured here because Linear MCP write calls were canceled during creation attempts, so the content is preserved and ready to create once the write path works again.
 
+Grouping rule
+
+- Steps that should be delivered together are grouped into the same child issue.
+- Each child issue assumes TDD during development, then full code review, then code simplification/refactor before PR.
+
 ## Umbrella Issue
 
 ### Title
@@ -30,7 +35,9 @@ Success criteria
 Execution model
 
 - Child issues own implementation by phase bundle.
-- Each child issue must implement, run TDD, simplify code before commit, and complete code review before closure.
+- Each child issue must develop with the `tdd-guide` workflow from the start, not as a cleanup pass afterward.
+- After implementation, run `code-reviewer`, address all critical/high findings, then simplify/refactor the code while preserving behavior before raising a PR.
+- Re-run the relevant tests after simplification and before marking the child issue ready.
 - This umbrella issue should only be closed once all child issues are complete and the Phase 2 success criteria are met.
 
 Child issue set
@@ -64,9 +71,10 @@ Scope
 Execution order
 
 1. Implement the scoped work for steps 1-2.
-2. Run the `tdd-guide` workflow to add or complete the relevant tests and get them passing.
-3. Simplify the code before commit: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
-4. Run `code-reviewer`, address all critical/high findings, and only then mark the ticket ready for completion/commit.
+2. Run the `tdd-guide` workflow during development so the relevant tests are added or completed as the work is implemented.
+3. Run `code-reviewer`, address all critical/high findings, and verify the intended behavior remains correct.
+4. Simplify/refactor the code before raising a PR: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
+5. Re-run the relevant tests after simplification and only then mark the ticket ready for completion/PR.
 
 Definition of done
 
@@ -74,7 +82,7 @@ Definition of done
 - Access control keeps participant and message data household-scoped.
 - Participant approval/revocation can be managed through server-owned paths.
 - Relevant tests pass.
-- Code has been simplified before commit.
+- Code has been simplified before PR.
 - Review has been completed and findings addressed.
 
 ### Phase 2B
@@ -98,9 +106,10 @@ Scope
 Execution order
 
 1. Implement the scoped work for steps 3-4.
-2. Run the `tdd-guide` workflow to add or complete the relevant tests and get them passing.
-3. Simplify the code before commit: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
-4. Run `code-reviewer`, address all critical/high findings, and only then mark the ticket ready for completion/commit.
+2. Run the `tdd-guide` workflow during development so the relevant tests are added or completed as the work is implemented.
+3. Run `code-reviewer`, address all critical/high findings, and verify the intended behavior remains correct.
+4. Simplify/refactor the code before raising a PR: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
+5. Re-run the relevant tests after simplification and only then mark the ticket ready for completion/PR.
 
 Definition of done
 
@@ -109,7 +118,7 @@ Definition of done
 - Inbound messages are deduplicated by provider message ID before downstream posting.
 - Approved-participant linkage and parse handoff are in place.
 - Relevant tests pass.
-- Code has been simplified before commit.
+- Code has been simplified before PR.
 - Review has been completed and findings addressed.
 
 ### Phase 2C
@@ -132,9 +141,10 @@ Scope
 Execution order
 
 1. Implement the scoped work for steps 5-6.
-2. Run the `tdd-guide` workflow to add or complete the relevant tests and get them passing.
-3. Simplify the code before commit: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
-4. Run `code-reviewer`, address all critical/high findings, and only then mark the ticket ready for completion/commit.
+2. Run the `tdd-guide` workflow during development so the relevant tests are added or completed as the work is implemented.
+3. Run `code-reviewer`, address all critical/high findings, and verify the intended behavior remains correct.
+4. Simplify/refactor the code before raising a PR: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
+5. Re-run the relevant tests after simplification and only then mark the ticket ready for completion/PR.
 
 Definition of done
 
@@ -144,7 +154,7 @@ Definition of done
 - Low-confidence or conflicting messages create review-required outcomes instead of silent misposts.
 - Classification and notification side effects are recorded as needed.
 - Relevant tests pass.
-- Code has been simplified before commit.
+- Code has been simplified before PR.
 - Review has been completed and findings addressed.
 
 ### Phase 2D
@@ -168,9 +178,10 @@ Scope
 Execution order
 
 1. Implement the scoped work for steps 7-8.
-2. Run the `tdd-guide` workflow to add or complete the relevant tests and get them passing.
-3. Simplify the code before commit: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
-4. Run `code-reviewer`, address all critical/high findings, and only then mark the ticket ready for completion/commit.
+2. Run the `tdd-guide` workflow during development so the relevant tests are added or completed as the work is implemented.
+3. Run `code-reviewer`, address all critical/high findings, and verify the intended behavior remains correct.
+4. Simplify/refactor the code before raising a PR: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
+5. Re-run the relevant tests after simplification and only then mark the ticket ready for completion/PR.
 
 Definition of done
 
@@ -178,7 +189,7 @@ Definition of done
 - Dashboard and transactions surfaces show UPI source attribution and integration state clearly.
 - Ambiguous UPI captures are reviewable in the product without leaving the main transaction flows.
 - Relevant tests pass.
-- Code has been simplified before commit.
+- Code has been simplified before PR.
 - Review has been completed and findings addressed.
 
 ### Phase 2E
@@ -202,9 +213,10 @@ Scope
 Execution order
 
 1. Implement the scoped work for steps 9-10.
-2. Run the `tdd-guide` workflow to add or complete the relevant tests and get them passing.
-3. Simplify the code before commit: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
-4. Run `code-reviewer`, address all critical/high findings, and only then mark the ticket ready for completion/commit.
+2. Run the `tdd-guide` workflow during development so the relevant tests are added or completed as the work is implemented.
+3. Run `code-reviewer`, address all critical/high findings, and verify the intended behavior remains correct.
+4. Simplify/refactor the code before raising a PR: remove avoidable complexity, tighten abstractions, and keep the implementation readable without changing behavior.
+5. Re-run the relevant tests after simplification and only then mark the ticket ready for completion/PR.
 
 Definition of done
 
@@ -212,7 +224,7 @@ Definition of done
 - Runtime setup, secrets, validation steps, and failure modes are documented.
 - The runbook supports happy-path, rejection-path, and review-path validation.
 - Relevant tests pass.
-- Code has been simplified before commit.
+- Code has been simplified before PR.
 - Review has been completed and findings addressed.
 
 ### Phase 2F
@@ -242,8 +254,9 @@ Execution order
 
 1. Implement the scoped work for steps 11-12.
 2. Close coverage gaps across earlier Phase 2 tickets and stabilize the relevant suites.
-3. Simplify the verification harness where it has become redundant or brittle, without weakening coverage.
-4. Run `code-reviewer`, address all critical/high findings, and only then mark the ticket ready for completion/commit.
+3. Run `code-reviewer`, address all critical/high findings, and verify the intended behavior remains correct.
+4. Simplify the verification harness where it has become redundant or brittle, without weakening coverage, before raising a PR.
+5. Re-run the relevant tests after simplification and only then mark the ticket ready for completion/PR.
 
 Definition of done
 
