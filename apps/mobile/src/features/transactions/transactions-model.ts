@@ -33,55 +33,12 @@ export function buildTransactionsScreenState(
   state: CoreProductState,
   filter: TransactionFilter = 'all'
 ): TransactionsScreenState {
-  const filteredTransactions =
-    filter === 'needs_review'
-      ? state.transactions.filter((transaction) => transaction.needsReview)
-      : state.transactions;
-
-  const groupedTransactions = [...filteredTransactions]
-    .sort((left, right) => new Date(right.postedAt).getTime() - new Date(left.postedAt).getTime())
-    .reduce<TransactionsScreenState['groups']>((groups, transaction) => {
-      const dateLabel = formatShortDate(transaction.postedAt);
-      const nextTransaction = {
-        ...transaction,
-        categoryName: getCategoryById(state.categories, transaction.categoryId).name,
-      };
-      const existingGroupIndex = groups.findIndex((group) => group.dateLabel === dateLabel);
-
-      if (existingGroupIndex === -1) {
-        return [
-          ...groups,
-          {
-            dateLabel,
-            totalAmount: transaction.amount,
-            transactionCount: 1,
-            transactions: [nextTransaction],
-          },
-        ];
-      }
-
-      const existingGroup = groups[existingGroupIndex];
-
-      return groups.map((group, groupIndex) => {
-        if (groupIndex !== existingGroupIndex || !existingGroup) {
-          return group;
-        }
-
-        return {
-          dateLabel,
-          totalAmount: existingGroup.totalAmount + transaction.amount,
-          transactionCount: existingGroup.transactionCount + 1,
-          transactions: [...existingGroup.transactions, nextTransaction],
-        };
-      });
-    }, []);
-
   return {
     categoryOptions: state.categories.map((category) => ({
       id: category.id,
       name: category.name,
     })),
-    groups: groupedTransactions,
+    groups: groupTransactions(state, filter),
     reviewQueueCount: state.transactions.filter((transaction) => transaction.needsReview).length,
   };
 }
@@ -117,4 +74,45 @@ export function reassignTransactionCategory(
     ...state,
     transactions: nextTransactions,
   };
+}
+
+function groupTransactions(
+  state: CoreProductState,
+  filter: TransactionFilter
+): TransactionsScreenState['groups'] {
+  const groupedTransactions = new Map<string, TransactionsScreenState['groups'][number]>();
+  const filteredTransactions =
+    filter === 'needs_review'
+      ? state.transactions.filter((transaction) => transaction.needsReview)
+      : state.transactions;
+
+  for (const transaction of [...filteredTransactions].sort(
+    (left, right) => new Date(right.postedAt).getTime() - new Date(left.postedAt).getTime()
+  )) {
+    const dateLabel = formatShortDate(transaction.postedAt);
+    const transactionWithCategory = {
+      ...transaction,
+      categoryName: getCategoryById(state.categories, transaction.categoryId).name,
+    };
+    const existingGroup = groupedTransactions.get(dateLabel);
+
+    if (!existingGroup) {
+      groupedTransactions.set(dateLabel, {
+        dateLabel,
+        totalAmount: transaction.amount,
+        transactionCount: 1,
+        transactions: [transactionWithCategory],
+      });
+      continue;
+    }
+
+    groupedTransactions.set(dateLabel, {
+      ...existingGroup,
+      totalAmount: existingGroup.totalAmount + transaction.amount,
+      transactionCount: existingGroup.transactionCount + 1,
+      transactions: [...existingGroup.transactions, transactionWithCategory],
+    });
+  }
+
+  return [...groupedTransactions.values()];
 }
