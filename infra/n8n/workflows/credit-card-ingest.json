@@ -1,0 +1,263 @@
+{
+  "name": "credit-card-ingest",
+  "nodes": [
+    {
+      "id": "drive-trigger",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        120
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "fileCreated",
+        "folderToWatch": "={{$env.DRIVE_FOLDER_ID}}"
+      }
+    },
+    {
+      "id": "prepare-context",
+      "name": "Prepare Statement Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -680,
+        120
+      ],
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "householdId",
+              "value": "replace-with-household-uuid"
+            },
+            {
+              "name": "providerFileId",
+              "value": "={{$json.id}}"
+            },
+            {
+              "name": "providerFileName",
+              "value": "={{$json.name}}"
+            },
+            {
+              "name": "parserProfileName",
+              "value": "replace-with-card-profile"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lookup-password-key",
+      "name": "Lookup Password Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -430,
+        120
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const passwordMap = JSON.parse($env.CARD_PASSWORD_MAP_JSON || '{}');\nconst parserProfileName = $json.parserProfileName;\nreturn [{ json: { ...$json, statementPasswordKey: passwordMap[parserProfileName] || null } }];"
+      }
+    },
+    {
+      "id": "download-pdf",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -170,
+        120
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{$json.providerFileId}}"
+      }
+    },
+    {
+      "id": "extract-text",
+      "name": "Extract Statement Text",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        80,
+        120
+      ],
+      "parameters": {
+        "command": "={{`${$env.PDF_TEXT_EXTRACT_COMMAND} --password-key '${($json.statementPasswordKey || '').replace(/'/g, \"'\\\\''\")}'`}}",
+        "input": "={{$binary.data.data}}"
+      }
+    },
+    {
+      "id": "call-parser",
+      "name": "Call statement-parse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        350,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.STATEMENT_PARSE_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-statement-pipeline-secret",
+              "value": "={{$env.STATEMENT_PIPELINE_SHARED_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { statement: { householdId: $json.householdId, providerFileId: $json.providerFileId, providerFileName: $json.providerFileName, parserProfileName: $json.parserProfileName, statementPasswordKey: $json.statementPasswordKey }, document: { extractedText: $json.stdout } } }}"
+      }
+    },
+    {
+      "id": "call-ingest",
+      "name": "Retry Ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.STATEMENT_INGEST_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-statement-pipeline-secret",
+              "value": "={{$env.STATEMENT_PIPELINE_SHARED_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.data}}",
+        "options": {
+          "timeout": 30000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      }
+    },
+    {
+      "id": "handle-failure",
+      "name": "Handle Failure",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        240
+      ],
+      "notesInFlow": true,
+      "notes": "On parser or ingest failure, keep the execution visible and route to the operator alert path."
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Statement Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Statement Context": {
+      "main": [
+        [
+          {
+            "node": "Lookup Password Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Password Key": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract Statement Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Statement Text": {
+      "main": [
+        [
+          {
+            "node": "Call statement-parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call statement-parse": {
+      "main": [
+        [
+          {
+            "node": "Retry Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Ingest": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Handle Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
