@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuthSession } from '@/features/auth/auth-session';
 import { formatCurrency, formatShortDate } from '@/features/core-product/core-product-formatting';
+import { createDashboardQueryKey } from '@/features/dashboard/dashboard-service';
 import {
   buildTransactionsScreenState,
   reassignTransactionCategory,
@@ -32,6 +33,7 @@ export default function TransactionsScreen() {
   const queryClient = useQueryClient();
   const householdId =
     session.status === 'signed_in' && session.household.status === 'ready' ? session.household.householdId : null;
+  const dashboardQueryKey = createDashboardQueryKey(householdId);
   const transactionsQueryKey = ['transactions', householdId] as const;
   const transactionsQuery = useQuery({
     enabled: householdId !== null,
@@ -61,7 +63,10 @@ export default function TransactionsScreen() {
         return;
       }
 
-      await queryClient.invalidateQueries({ queryKey: transactionsQueryKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: transactionsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKey }),
+      ]);
     },
   });
   const ledgerState = transactionsQuery.data ?? null;

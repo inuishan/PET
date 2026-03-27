@@ -1,7 +1,6 @@
 import {
   type CoreProductState,
   getCategoryById,
-  type LedgerTransaction,
   type SyncStatus,
 } from '@/features/core-product/core-product-state';
 import { formatRelativeDuration } from '@/features/core-product/core-product-formatting';
@@ -15,11 +14,14 @@ export type DashboardAlert = {
 
 export type DashboardSnapshot = {
   alerts: DashboardAlert[];
-  recentTransactions: Array<
-    LedgerTransaction & {
-      categoryName: string;
-    }
-  >;
+  recentTransactions: Array<{
+    amount: number;
+    categoryName: string;
+    id: string;
+    merchant: string;
+    needsReview: boolean;
+    postedAt: string;
+  }>;
   sync: {
     freshnessLabel: string;
     pendingStatementCount: number;
@@ -30,6 +32,7 @@ export type DashboardSnapshot = {
     reviewQueueAmount: number;
     reviewQueueCount: number;
     reviewedAmount: number;
+    transactionCount: number;
   };
 };
 
@@ -66,8 +69,12 @@ export function createDashboardSnapshot(state: CoreProductState, asOf: string = 
   return {
     alerts,
     recentTransactions: sortedTransactions.slice(0, 4).map((transaction) => ({
-      ...transaction,
+      amount: transaction.amount,
       categoryName: getCategoryById(state.categories, transaction.categoryId).name,
+      id: transaction.id,
+      merchant: transaction.merchant,
+      needsReview: transaction.needsReview,
+      postedAt: transaction.postedAt,
     })),
     sync: {
       freshnessLabel: `Updated ${formatRelativeDuration(state.sync.lastSuccessfulSyncAt, asOf)}`,
@@ -79,6 +86,7 @@ export function createDashboardSnapshot(state: CoreProductState, asOf: string = 
       reviewQueueAmount,
       reviewQueueCount: reviewQueueTransactions.length,
       reviewedAmount: monthToDateSpend - reviewQueueAmount,
+      transactionCount: state.transactions.length,
     },
   };
 }
