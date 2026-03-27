@@ -25,6 +25,9 @@ test('Phase 1 tab screens remain wired to dashboard and review-state models', ()
   assert.match(dashboardSource, /createDashboardSnapshot/);
   assert.match(dashboardSource, /Needs review/);
   assert.match(transactionsSource, /buildTransactionsScreenState/);
-  assert.match(transactionsSource, /reassignTransactionCategory/);
+  assert.match(transactionsSource, /loadTransactionsSnapshot/);
+  assert.match(transactionsSource, /saveTransactionCategoryAssignment/);
+  assert.match(transactionsSource, /useQuery/);
+  assert.match(transactionsSource, /useMutation/);
   assert.match(transactionsSource, /Needs review/);
 });
