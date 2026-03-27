@@ -4,10 +4,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuthSession } from '@/features/auth/auth-session';
 
 export default function SignInScreen() {
-  const { startGoogleSignIn } = useAuthSession();
+  const { session, startGoogleSignIn } = useAuthSession();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const isHydrating = session.status === 'loading';
 
   async function handleGooglePress() {
+    setStatusMessage(null);
     const result = await startGoogleSignIn();
 
     if (!result.ok) {
@@ -20,18 +22,22 @@ export default function SignInScreen() {
       <Text style={styles.eyebrow}>Phase 1 Foundation</Text>
       <Text style={styles.title}>Expense Tracking</Text>
       <Text style={styles.description}>
-        Google Sign-In, shared household access, and statement ingestion arrive next. This screen is
-        the auth shell for the Phase 1 build.
+        Use Google Sign-In to restore your Supabase session, then connect to your shared household
+        workspace before the dashboard unlocks.
       </Text>
 
-      <Pressable onPress={handleGooglePress} style={styles.primaryButton}>
-        <Text style={styles.primaryButtonText}>Continue With Google</Text>
+      <Pressable disabled={isHydrating} onPress={handleGooglePress} style={styles.primaryButton}>
+        <Text style={styles.primaryButtonText}>
+          {isHydrating ? 'Restoring Session...' : 'Continue With Google'}
+        </Text>
       </Pressable>
 
       <Text style={styles.helperText}>
-        The app shell stays protected until Supabase Google OAuth is connected.
+        Separate Google accounts map into one household, so every user signs in individually before
+        joining the shared ledger.
       </Text>
 
+      {session.errorMessage ? <Text style={styles.statusMessage}>{session.errorMessage}</Text> : null}
       {statusMessage ? <Text style={styles.statusMessage}>{statusMessage}</Text> : null}
     </View>
   );

@@ -4,13 +4,13 @@ import { ActivityIndicator, View } from 'react-native';
 import { getProtectedRedirect } from '@/features/auth/auth-routing';
 import { useAuthSession } from '@/features/auth/auth-session';
 
-export default function AuthLayout() {
+export default function OnboardingLayout() {
   const { session } = useAuthSession();
   const isLoading =
     session.status === 'loading' || (session.status === 'signed_in' && session.household.status === 'loading');
   const redirectHref = getProtectedRedirect({
     authStatus: session.status,
-    group: 'auth',
+    group: 'onboarding',
     householdStatus: session.household.status,
   });
 

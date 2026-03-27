@@ -4,12 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 function readMigration(filename) {
-  const filePath = path.join(
-    '/mnt/hdd/workspace/expense-tracking',
-    'supabase',
-    'migrations',
-    filename,
-  );
+  const filePath = path.join(process.cwd(), 'supabase', 'migrations', filename);
 
   return fs.readFileSync(filePath, 'utf8');
 }
@@ -86,4 +81,17 @@ test('0003_views.sql adds month-to-date summaries and dashboard helper functions
   assert.match(migration, /create or replace view public\.household_statement_sync_status/i);
   assert.match(migration, /create or replace function public\.get_household_dashboard_summary/i);
   assert.match(migration, /security_invoker/i);
+});
+
+test('0004_household_invites.sql adds invite-backed onboarding helpers', () => {
+  const migration = readMigration('0004_household_invites.sql');
+
+  assert.match(migration, /create table public\.household_invites/i);
+  assert.match(migration, /alter table public\.household_invites enable row level security/i);
+  assert.match(migration, /create policy household_invites_select_for_owners/i);
+  assert.match(migration, /create or replace function public\.ensure_household_invite/i);
+  assert.match(migration, /create or replace function public\.create_household_with_owner/i);
+  assert.match(migration, /create or replace function public\.join_household_with_invite/i);
+  assert.match(migration, /maximum number of members for Phase 1/i);
+  assert.match(migration, /jsonb_build_object/i);
 });

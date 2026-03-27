@@ -1,26 +1,51 @@
-export type AuthStatus = 'signed_in' | 'signed_out';
-export type RouteGroup = 'auth' | 'tabs';
+import type { AuthStatus } from './auth-service';
+import type { HouseholdStatus } from '@/features/household/household-session';
+
+export type RouteGroup = 'auth' | 'onboarding' | 'tabs';
+export type AppHref = '/(auth)/sign-in' | '/(onboarding)/household' | '/(tabs)';
 
 type ProtectedRedirectInput = {
   authStatus: AuthStatus;
   group: RouteGroup;
+  householdStatus: HouseholdStatus;
+};
+
+type DefaultHrefInput = {
+  authStatus: AuthStatus;
+  householdStatus: HouseholdStatus;
 };
 
 export function getProtectedRedirect({
   authStatus,
   group,
-}: ProtectedRedirectInput): '/(auth)/sign-in' | '/(tabs)' | null {
-  if (authStatus === 'signed_out' && group === 'tabs') {
+  householdStatus,
+}: ProtectedRedirectInput): AppHref | null {
+  if (authStatus === 'loading' || (authStatus === 'signed_in' && householdStatus === 'loading')) {
+    return null;
+  }
+
+  if (authStatus === 'signed_out') {
+    return group === 'auth' ? null : '/(auth)/sign-in';
+  }
+
+  if (householdStatus === 'needs_household') {
+    return group === 'onboarding' ? null : '/(onboarding)/household';
+  }
+
+  return group === 'tabs' ? null : '/(tabs)';
+}
+
+export function getDefaultAuthenticatedHref({
+  authStatus,
+  householdStatus,
+}: DefaultHrefInput): AppHref | null {
+  if (authStatus === 'loading' || (authStatus === 'signed_in' && householdStatus === 'loading')) {
+    return null;
+  }
+
+  if (authStatus === 'signed_out') {
     return '/(auth)/sign-in';
   }
 
-  if (authStatus === 'signed_in' && group === 'auth') {
-    return '/(tabs)';
-  }
-
-  return null;
-}
-
-export function getDefaultAuthenticatedHref(authStatus: AuthStatus): '/(auth)/sign-in' | '/(tabs)' {
-  return authStatus === 'signed_in' ? '/(tabs)' : '/(auth)/sign-in';
+  return householdStatus === 'ready' ? '/(tabs)' : '/(onboarding)/household';
 }
