@@ -1,13 +1,17 @@
 # PRD: AI-Powered Family Expense Tracker
 
 ## Status
-Draft v0.2 based on:
+Draft v0.3 based on:
 - `.codex/agents/planner.md`
 - `stitch-dashboard-html/dashboard-with-spending-alerts.html`
 - `stitch-dashboard-html/updated-dashboard-with-annotations.html`
 - `stitch-dashboard-html/transaction-history.html`
 - `stitch-dashboard-html/analytics-expense-focus.html`
 - Corresponding Stitch screenshots in `stitch-dashboard-html/images/`
+
+Current sequencing decision:
+- Phase 1 prioritizes credit card statement ingestion.
+- UPI/WhatsApp capture remains in overall product scope, but is deferred until after the first credit-card-ledger slice is working.
 
 ## Overview
 Build a native mobile expense tracking app for a household, optimized for India-first payment behavior. The product should combine automated credit card statement ingestion, WhatsApp-triggered UPI capture through a Meta Cloud API test number, LLM-assisted categorization, and proactive savings insights for expenses only.
@@ -54,9 +58,11 @@ Create a shared household finance assistant that automatically consolidates card
 ## Assumptions
 - Users are in India and transact primarily in INR.
 - Credit card statements are uploaded to a Google Drive folder.
-- n8n is the orchestration layer for statement ingestion and notifications.
+- n8n is self-hosted on a local machine and acts as the orchestration layer for statement ingestion and notifications.
 - UPI capture uses direct messages from the user and spouse to a Meta Cloud API test number.
 - Only approved household participants are allowed to use the WhatsApp capture flow in v1.
+- Phase 1 focuses on credit card ingestion before WhatsApp ingestion.
+- Raw statement PDFs remain only in Google Drive; the app/backend stores parsed data, metadata, and review state only.
 - The first supported household size is two adults.
 - The first client experience is a native mobile app, based on the Stitch layouts.
 
@@ -114,15 +120,18 @@ Bottom nav should support at least Dashboard, Analytics, Transactions, and Setti
 
 ### 3. Credit Card Statement Ingestion via Drive + n8n
 - User uploads a statement PDF into a designated Google Drive folder.
-- n8n detects the new file, extracts text, parses transactions, and sends structured data into the app backend.
+- n8n detects the new file, preferably via Drive push notifications, with polling as a fallback.
+- n8n coordinates PDF retrieval, password lookup, parser invocation, and persistence of parsed output into the app backend.
 - Users should be able to configure supported card/bank statement profiles in Settings.
 - If statement PDFs require passwords, password handling must be managed in n8n credentials or environment-backed secrets, not hardcoded directly into workflow logic.
 - The system should support duplicate detection by statement period, transaction fingerprint, and source file ID.
 - The app should store statement metadata: bank, card, billing period, upload time, parse status, parse confidence.
+- The system should use an LLM-first parser for multi-format statement extraction, with deterministic normalization and validation after extraction.
 - If parsing fails or confidence is low, the user should receive a notification and a review task.
-- The ingestion flow must be fail-safe: unsupported formats, malformed statements, or low-confidence parses must not auto-post final transactions without review.
+- The ingestion flow must be fail-safe: unsupported formats, malformed statements, or low-confidence parses must be visibly highlighted for review.
 - The dashboard should show the last successful Drive sync time.
 - The native app should not upload statements directly; it should show Drive setup instructions, sync health, and review outcomes.
+- The raw PDF should remain only in Google Drive and must not be copied into application-managed storage in v1.
 
 ### 4. Statement Upload Reminders
 - The system should remind the user to upload statements when an expected cycle is missing.
@@ -247,7 +256,7 @@ Bottom nav should support at least Dashboard, Analytics, Transactions, and Setti
 5. Statement text is extracted and parsed.
 6. Parsed transactions are deduplicated and stored.
 7. Rules and LLM classify categories.
-8. Low-confidence, unsupported, or malformed rows are flagged and held for review.
+8. Low-confidence, unsupported, or malformed rows are ingested with a visible review state.
 9. User receives success or failure notification.
 10. Dashboard and analytics refresh.
 
@@ -312,6 +321,8 @@ Bottom nav should support at least Dashboard, Analytics, Transactions, and Setti
 ## Risks and Mitigations
 - **Risk:** Statement PDFs vary significantly by bank and format.
   - Mitigation: use configurable parser profiles, explicit parse confidence, and fail-closed review behavior for unsupported or low-confidence statements.
+- **Risk:** Self-hosted local n8n can be unavailable when the local machine is offline.
+  - Mitigation: keep a polling fallback, surface sync health clearly in the app, and document local uptime expectations.
 - **Risk:** Meta test-number constraints may limit long-term WhatsApp usage.
   - Mitigation: treat test-number integration as v1 internal-household scope and keep migration path open to a real business number if needed later.
 - **Risk:** LLM classification may hallucinate categories or overfit ambiguous merchants.
@@ -323,36 +334,32 @@ Bottom nav should support at least Dashboard, Analytics, Transactions, and Setti
 
 ## Delivery Phases
 
-### Phase 1: Core Ledger MVP
+### Phase 1: Credit Card Ingestion MVP
 - Shared household workspace
-- Manual transaction model
-- Statement upload records
+- Google Sign-In with separate user accounts
+- One shared Drive folder
+- Statement ingestion via self-hosted n8n
+- Password-protected PDF handling
+- LLM-first parsing with review highlighting
 - Dashboard shell
 - Transactions list
 - Basic alerts
 
-### Phase 2: Credit Card Automation
-- Drive folder ingestion via n8n
-- Statement parsing for first supported card formats
-- Deduplication
-- Classification engine v1
-- Sync status and reminder notifications
-
-### Phase 3: UPI Capture
+### Phase 2: UPI Capture
 - Meta Cloud API test-number ingestion
 - Message parsing
 - Owner attribution
 - Review queue for ambiguous UPI captures
 - Optional WhatsApp status acknowledgements
 
-### Phase 4: Analytics and AI Layer
+### Phase 3: Analytics and AI Layer
 - Trend charts
 - Category allocation
 - Insight cards
 - Deep analysis report
 - Savings recommendation engine
 
-### Phase 5: Learning and Trust
+### Phase 4: Learning and Trust
 - User correction feedback loop
 - Merchant alias memory
 - Improved confidence scoring
@@ -360,20 +367,23 @@ Bottom nav should support at least Dashboard, Analytics, Transactions, and Setti
 
 ## Confirmed Decisions
 1. The first release will be a native mobile app.
-2. Exact default card/bank parser profiles for first launch are unspecified; product should allow setup in Settings and fail closed on unsupported formats.
+2. Exact default card/bank parser profiles for first launch are unspecified; product should allow setup in Settings and visibly highlight unsupported or low-confidence rows.
 3. Statement uploads will happen in Drive, not in the app.
 4. If statement PDFs require passwords, password handling should use n8n secrets-backed configuration rather than hardcoded workflow logic.
-5. WhatsApp capture will use a Meta Cloud API test number with direct messages from approved household participants.
-6. WhatsApp capture should rely on AI parsing of free-form messages, with explicit error surfacing when parsing is uncertain.
-7. The app should store expenses only.
-8. Budgets are excluded from v1.
-9. Notification channels for v1 are push and email.
+5. n8n will be self-hosted on a local machine for workflow orchestration.
+6. Phase 1 will prioritize credit card ingestion before WhatsApp ingestion.
+7. Raw statement PDFs will remain only in Google Drive.
+8. Parsed transactions should be included in totals even when they are marked `needs_review`.
+9. WhatsApp capture will use a Meta Cloud API test number with direct messages from approved household participants after the credit-card-first slice.
+10. WhatsApp capture should rely on AI parsing of free-form messages, with explicit error surfacing when parsing is uncertain.
+11. The app should store expenses only.
+12. Budgets are excluded from v1.
+13. Notification channels for v1 are push and email.
 
 ## Remaining Open Questions
-1. What category taxonomy do you want at launch?
-2. Are AI insights advisory only, or should they also create tasks and reminders automatically?
-3. Do you want account-level privacy controls between you and your wife, or full shared visibility?
-4. What level of data privacy, hosting, and retention constraints should the system assume?
+1. Are AI insights advisory only, or should they also create tasks and reminders automatically?
+2. Do you want account-level privacy controls between you and your wife, or full shared visibility?
+3. What level of data privacy, hosting, and retention constraints should the system assume?
 
 ## Immediate Recommendation
-Lock v1 around one household, one Drive folder, configurable statement parser profiles with strict review fallback, a constrained category taxonomy, and AI-parsed WhatsApp capture via Meta test-number direct messages with explicit review states. That will keep ingestion quality high enough for the analytics and AI layer to be trusted.
+Lock Phase 1 around one household, one Drive folder, self-hosted n8n orchestration, LLM-first multi-format credit card parsing, and explicit review highlighting for low-confidence rows. Then add WhatsApp capture as the next ingestion source without changing the core data model.

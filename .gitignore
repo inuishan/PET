@@ -1,0 +1,10 @@
+# Local sample statements and parsing fixtures
+local-statements/
+
+# Common sensitive document formats if placed in the local statements folder
+local-statements/**/*.pdf
+local-statements/**/*.csv
+local-statements/**/*.txt
+
+# Workspace installs
+node_modules/

@@ -1,0 +1,14 @@
+{
+  "name": "expense-tracking",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "mobile:android": "npm --prefix apps/mobile run android",
+    "mobile:start": "npm --prefix apps/mobile run start",
+    "mobile:test": "npm --prefix apps/mobile run test",
+    "mobile:lint": "npm --prefix apps/mobile run lint"
+  }
+}
