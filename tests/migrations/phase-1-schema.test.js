@@ -109,3 +109,17 @@ test('0005_transaction_review_rpc.sql adds a household-safe transaction review m
   assert.match(migration, /insert into public\.classification_events/i);
   assert.match(migration, /grant execute on function public\.reassign_transaction_category/i);
 });
+
+test('0006_settings_preferences.sql adds persisted notification preferences and live settings helpers', () => {
+  const migration = readMigration('0006_settings_preferences.sql');
+
+  assert.match(migration, /create table public\.notification_preferences/i);
+  assert.match(migration, /alter table public\.notification_preferences enable row level security/i);
+  assert.match(migration, /create policy notification_preferences_select_for_recipient/i);
+  assert.match(migration, /create or replace function public\.get_household_settings_summary/i);
+  assert.match(migration, /grant execute on function public\.get_household_settings_summary/i);
+  assert.match(migration, /from public\.statement_uploads/i);
+  assert.match(migration, /create or replace function public\.upsert_notification_preference/i);
+  assert.match(migration, /on conflict \(household_id, user_id, notification_type, channel\)/i);
+  assert.match(migration, /grant execute on function public\.upsert_notification_preference/i);
+});
