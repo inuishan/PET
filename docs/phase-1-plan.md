@@ -199,3 +199,4 @@ The architecture is chosen for the full roadmap, not just this slice. The app wi
 - [ ] Transactions can be reviewed and recategorized in the app
 - [ ] Dashboard and transaction list reflect ingested data correctly
 - [ ] The system supports multiple statement formats with a clear failure path for unsupported files
+- [ ] Parser failures, blocked syncs, and review-queue escalations create persisted notifications and deliver through the configured Phase 1 alert channel

@@ -20,6 +20,11 @@ Set these for Supabase edge functions:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `VERCEL_AI_GATEWAY_API_KEY`
 - `STATEMENT_PARSE_MODEL` optionally overrides the parser model.
+- `PHASE1_ALERT_CHANNELS`: Comma-separated alert channels to deliver during Phase 1. The current repo implementation supports `push` and defaults to `push`.
+- `PHASE1_ALERT_FCM_PROJECT_ID`: Firebase project ID used for Android push delivery.
+- `PHASE1_ALERT_FCM_SERVICE_ACCOUNT_JSON`: Full Firebase service account JSON used to mint an OAuth access token for FCM HTTP v1.
+- `PHASE1_ALERT_PUSH_TOPIC_PREFIX`: Optional topic prefix for per-user subscriptions. Defaults to `phase1-user`.
+- `PHASE1_ALERT_TIMEOUT_MS`: Optional per-request timeout for Google OAuth and FCM calls. Defaults to `5000`.
 
 ## Workflow shape
 
@@ -31,6 +36,27 @@ Set these for Supabase edge functions:
 6. `Call statement-parse` posts statement metadata plus extracted text to Supabase.
 7. `Retry Ingest` sends the normalized payload to `statement-ingest` with retries and backoff.
 8. `Handle Failure` records sync failure details in the execution log and triggers a visible alert path.
+
+## Alert delivery behavior
+
+- `statement-parse` sends a Phase 1 alert when parser execution fails after the request payload has been validated.
+- `statement-ingest` sends a Phase 1 alert when the ingest persistence step fails and when a successful ingest still leaves rows in the review queue.
+- Delivery is scheduled in the edge runtime background path when available so successful ingest responses do not block on push transport.
+- Each alert is inserted into `public.notifications` with `status = 'queued'`, then finalized to `sent` or `failed` after delivery attempts complete.
+- Delivery is attempted up to 3 times inside the alert worker path.
+- Successful delivery updates the existing notification row to `status = 'sent'` and fills `sent_at`.
+- Exhausted delivery attempts update the row to `status = 'failed'`.
+- If `PHASE1_ALERT_CHANNELS` includes `push` but the FCM provider env is missing, notification rows are still created and immediately marked `failed` with a configuration error in `payload.delivery.lastError`.
+- Unsupported values in `PHASE1_ALERT_CHANNELS` are ignored. If no supported value remains, the runtime falls back to `push`.
+- Invalid `PHASE1_ALERT_FCM_SERVICE_ACCOUNT_JSON` disables push delivery but does not take the edge functions down.
+- If transport starts but the final `sent` or `failed` write cannot be persisted, the row stays `queued` with `payload.delivery.finalizationRequired = true` and the latest attempt metadata. Treat that as an observable reconciliation state rather than a never-attempted alert.
+- Delivery attempt count, last error, provider, and target topic are stored in the notification `payload.delivery` object so the state remains observable without a separate retry table.
+
+## Android push subscription contract
+
+- The Phase 1 delivery path uses FCM HTTP v1 with one topic per authenticated user.
+- Mobile clients should subscribe each signed-in Android device to `PHASE1_ALERT_PUSH_TOPIC_PREFIX + "-" + <supabase-user-id>`.
+- Because notification rows remain per-recipient in `public.notifications`, user-visible state stays aligned with the topic-based push delivery path even though the transport target is a topic.
 
 ## Retry policy
 

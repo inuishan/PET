@@ -8,6 +8,8 @@ import {
 export const PIPELINE_SECRET_HEADER = 'x-statement-pipeline-secret';
 
 export async function handleStatementIngestRequest(request, dependencies) {
+  let alertContext = null;
+
   if (request.method !== 'POST') {
     return jsonResponse(405, {
       success: false,
@@ -34,8 +36,24 @@ export async function handleStatementIngestRequest(request, dependencies) {
     const statementUpload = buildStatementUploadRecord(normalizedPayload, {
       syncedAt: dependencies.now?.() ?? new Date().toISOString(),
     });
+    alertContext = {
+      householdId: statementUpload.householdId,
+      providerFileId: statementUpload.providerFileId,
+      providerFileName: statementUpload.providerFileName,
+    };
     const transactions = buildTransactionRecords(normalizedPayload);
     const savedStatementUpload = await dependencies.repository.ingestStatement(statementUpload, transactions);
+    const reviewCount = transactions.filter((transaction) => transaction.needsReview).length;
+
+    if (reviewCount > 0) {
+      await notifyAlert(dependencies.alerts?.notifyReviewQueueEscalation, {
+        householdId: statementUpload.householdId,
+        providerFileId: statementUpload.providerFileId,
+        providerFileName: statementUpload.providerFileName,
+        relatedStatementUploadId: savedStatementUpload.id,
+        reviewCount,
+      }, dependencies.scheduleBackgroundTask);
+    }
 
     return jsonResponse(200, {
       success: true,
@@ -60,6 +78,7 @@ export async function handleStatementIngestRequest(request, dependencies) {
     }
 
     console.error('statement-ingest failed', error);
+    await notifyAlert(dependencies.alerts?.notifySyncBlocked, alertContext, dependencies.scheduleBackgroundTask);
 
     return jsonResponse(502, {
       success: false,
@@ -143,4 +162,25 @@ function mapTransactionRecord(transaction) {
 
 function jsonResponse(status, body) {
   return Response.json(body, { status });
+}
+
+async function notifyAlert(notify, context, scheduleBackgroundTask) {
+  if (typeof notify !== 'function' || !context?.householdId || !context?.providerFileName) {
+    return;
+  }
+
+  const job = notify(context).catch((error) => {
+    console.error('phase-1 alert delivery failed', error);
+  });
+
+  if (typeof scheduleBackgroundTask === 'function') {
+    scheduleBackgroundTask(job);
+    return;
+  }
+
+  try {
+    await job;
+  } catch {
+    // The job already logs its own failures.
+  }
 }

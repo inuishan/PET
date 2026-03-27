@@ -175,3 +175,35 @@ test('handleStatementParseRequest treats invalid model metadata as a parser fail
   assert.equal(body.success, false);
   assert.equal(body.error.code, 'statement_parse_failed');
 });
+
+test('handleStatementParseRequest triggers a parser-failure alert after a parse error', async () => {
+  const alertCalls = [];
+  const request = new Request('http://localhost/functions/v1/statement-parse', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-statement-pipeline-secret': 'pipeline-secret',
+    },
+    body: JSON.stringify(parsePayload),
+  });
+
+  const response = await handleStatementParseRequest(request, {
+    alerts: {
+      async notifyParserFailure(context) {
+        alertCalls.push(context);
+      },
+    },
+    aiGatewayApiKey: 'gateway-key',
+    fetch: async () => {
+      throw new Error('gateway timeout');
+    },
+    model: 'openai/gpt-5-mini',
+    pipelineSecret: 'pipeline-secret',
+  });
+
+  assert.equal(response.status, 502);
+  assert.equal(alertCalls.length, 1);
+  assert.equal(alertCalls[0].providerFileId, parsePayload.statement.providerFileId);
+  assert.equal(alertCalls[0].providerFileName, parsePayload.statement.providerFileName);
+  assert.equal(alertCalls[0].householdId, parsePayload.statement.householdId);
+});
