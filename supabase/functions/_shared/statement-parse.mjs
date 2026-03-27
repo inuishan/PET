@@ -8,6 +8,8 @@ const DEFAULT_AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1/chat/completions
 const DEFAULT_MODEL = 'openai/gpt-5-mini';
 
 export async function handleStatementParseRequest(request, dependencies) {
+  let alertContext = null;
+
   if (request.method !== 'POST') {
     return jsonResponse(405, {
       success: false,
@@ -43,6 +45,12 @@ export async function handleStatementParseRequest(request, dependencies) {
   try {
     const payload = await request.json();
     input = normalizeStatementParseInput(payload);
+    alertContext = {
+      householdId: input.statement.householdId ?? null,
+      parserProfileName: input.statement.parserProfileName ?? null,
+      providerFileId: input.statement.providerFileId ?? null,
+      providerFileName: input.statement.providerFileName ?? null,
+    };
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof StatementValidationError) {
       return jsonResponse(400, {
@@ -74,6 +82,7 @@ export async function handleStatementParseRequest(request, dependencies) {
     });
   } catch (error) {
     console.error('statement-parse failed', error);
+    await notifyAlert(dependencies.alerts?.notifyParserFailure, alertContext, dependencies.scheduleBackgroundTask);
 
     return jsonResponse(502, {
       success: false,
@@ -209,4 +218,25 @@ function isAuthorizedRequest(request, pipelineSecret) {
 
 function jsonResponse(status, body) {
   return Response.json(body, { status });
+}
+
+async function notifyAlert(notify, context, scheduleBackgroundTask) {
+  if (typeof notify !== 'function' || !context?.householdId || !context?.providerFileName) {
+    return;
+  }
+
+  const job = notify(context).catch((error) => {
+    console.error('phase-1 alert delivery failed', error);
+  });
+
+  if (typeof scheduleBackgroundTask === 'function') {
+    scheduleBackgroundTask(job);
+    return;
+  }
+
+  try {
+    await job;
+  } catch {
+    // The job already logs its own failures.
+  }
 }

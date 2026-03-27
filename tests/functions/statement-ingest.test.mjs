@@ -68,6 +68,7 @@ test('handleStatementIngestRequest rejects missing webhook auth', async () => {
 
 test('handleStatementIngestRequest persists statement metadata and normalized rows', async () => {
   const captured = {
+    reviewQueueAlerts: [],
     statementUpload: null,
     transactions: null,
   };
@@ -82,6 +83,11 @@ test('handleStatementIngestRequest persists statement metadata and normalized ro
   });
 
   const response = await handleStatementIngestRequest(request, {
+    alerts: {
+      async notifyReviewQueueEscalation(context) {
+        captured.reviewQueueAlerts.push(context);
+      },
+    },
     webhookSecret: 'super-secret',
     repository: {
       ingestStatement: async (statementUpload, transactions) => {
@@ -105,9 +111,13 @@ test('handleStatementIngestRequest persists statement metadata and normalized ro
   assert.equal(captured.transactions.length, 2);
   assert.equal('statementUploadId' in captured.transactions[0], false);
   assert.equal(captured.transactions[1].needsReview, true);
+  assert.equal(captured.reviewQueueAlerts.length, 1);
+  assert.equal(captured.reviewQueueAlerts[0].reviewCount, 1);
+  assert.equal(captured.reviewQueueAlerts[0].relatedStatementUploadId, 'upload-123');
 });
 
 test('handleStatementIngestRequest surfaces repository errors without leaking internals', async () => {
+  const syncBlockedAlerts = [];
   const request = new Request('http://localhost/functions/v1/statement-ingest', {
     method: 'POST',
     headers: {
@@ -118,6 +128,11 @@ test('handleStatementIngestRequest surfaces repository errors without leaking in
   });
 
   const response = await handleStatementIngestRequest(request, {
+    alerts: {
+      async notifySyncBlocked(context) {
+        syncBlockedAlerts.push(context);
+      },
+    },
     webhookSecret: 'super-secret',
     repository: {
       ingestStatement: async () => {
@@ -132,6 +147,48 @@ test('handleStatementIngestRequest surfaces repository errors without leaking in
   assert.equal(body.success, false);
   assert.equal(body.error.code, 'statement_ingest_failed');
   assert.match(body.error.message, /persist/i);
+  assert.equal(syncBlockedAlerts.length, 1);
+  assert.equal(syncBlockedAlerts[0].providerFileId, payload.statement.providerFileId);
+  assert.equal(syncBlockedAlerts[0].householdId, payload.statement.householdId);
+});
+
+test('handleStatementIngestRequest schedules review alerts without blocking a successful ingest response', async () => {
+  let scheduledAlertPromise = null;
+  let resolveAlert = null;
+  const alertStarted = [];
+  const request = new Request('http://localhost/functions/v1/statement-ingest', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-statement-pipeline-secret': 'super-secret',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const response = await handleStatementIngestRequest(request, {
+    alerts: {
+      async notifyReviewQueueEscalation() {
+        alertStarted.push('started');
+        await new Promise((resolve) => {
+          resolveAlert = resolve;
+        });
+      },
+    },
+    repository: {
+      ingestStatement: async () => ({ id: 'upload-123' }),
+    },
+    scheduleBackgroundTask(promise) {
+      scheduledAlertPromise = promise;
+    },
+    webhookSecret: 'super-secret',
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(alertStarted.length, 1);
+  assert.ok(scheduledAlertPromise);
+
+  resolveAlert();
+  await scheduledAlertPromise;
 });
 
 test('createSupabaseStatementRepository uses one RPC call for statement and transactions', async () => {
