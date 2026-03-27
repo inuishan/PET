@@ -1,5 +1,75 @@
 import { formatRelativeDuration } from '@/features/core-product/core-product-formatting';
-import { type CoreProductState, type ParserProfileStatus } from '@/features/core-product/core-product-state';
+import type { NotificationPreference, ParserProfile, ParserProfileStatus, SyncStatus } from '@/features/core-product/core-product-state';
+
+export type SettingsNotificationType =
+  | 'review_queue_escalation'
+  | 'statement_parse_failure'
+  | 'statement_sync_blocked';
+
+export type PersistedNotificationPreference = {
+  channel: NotificationPreference['channel'];
+  enabled: boolean;
+  notificationType: SettingsNotificationType;
+};
+
+export type SettingsCategorySummary = {
+  categoryId: string | null;
+  categoryName: string;
+  reviewCount: number;
+  totalSpend: number;
+  transactionCount: number;
+};
+
+export type SettingsParserProfileSummary = ParserProfile;
+
+export type SettingsSyncSummary = {
+  failedStatementCount: number;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  lastSuccessfulSyncAt: string | null;
+  latestParseStatus: string | null;
+  needsReviewStatementCount: number;
+  pendingStatementCount: number;
+};
+
+export type SettingsSummary = {
+  categories: SettingsCategorySummary[];
+  parserProfiles: SettingsParserProfileSummary[];
+  syncStatus: SettingsSyncSummary;
+};
+
+export type SettingsNotificationPreference = NotificationPreference & {
+  notificationType: SettingsNotificationType;
+};
+
+export type SettingsSnapshot = {
+  categories: Array<{
+    id: string;
+    name: string;
+    reviewCount: number;
+    totalAmount: number;
+    transactionCount: number;
+  }>;
+  notificationPreferences: SettingsNotificationPreference[];
+  parserProfiles: SettingsParserProfileSummary[];
+  syncHealth: {
+    failureCount: number;
+    lastAttemptLabel: string;
+    lastError: string | null;
+    lastSuccessfulSyncLabel: string;
+    pendingStatementCount: number;
+    status: SyncStatus;
+  };
+};
+
+type NotificationPreferenceCatalogEntry = {
+  defaultEnabled: boolean;
+  id: string;
+  label: string;
+  description: string;
+  channel: NotificationPreference['channel'];
+  notificationType: SettingsNotificationType;
+};
 
 const profileStatusRank: Record<ParserProfileStatus, number> = {
   active: 2,
@@ -7,49 +77,130 @@ const profileStatusRank: Record<ParserProfileStatus, number> = {
   needs_attention: 0,
 };
 
-export function buildSettingsSnapshot(state: CoreProductState, asOf: string = state.asOf) {
-  const categories = state.categories
-    .map((category) => {
-      const matchingTransactions = state.transactions.filter((transaction) => transaction.categoryId === category.id);
+const notificationPreferenceCatalog: NotificationPreferenceCatalogEntry[] = [
+  {
+    channel: 'push',
+    defaultEnabled: true,
+    description: 'Surface parser failures within the household app.',
+    id: 'push-parse-failures',
+    label: 'Parser failures',
+    notificationType: 'statement_parse_failure',
+  },
+  {
+    channel: 'email',
+    defaultEnabled: false,
+    description: 'Send a summary when a statement sync has been blocked for over an hour.',
+    id: 'email-sync-escalations',
+    label: 'Sync escalations',
+    notificationType: 'statement_sync_blocked',
+  },
+  {
+    channel: 'push',
+    defaultEnabled: true,
+    description: 'Notify when new rows land with needs review turned on.',
+    id: 'push-review-queue',
+    label: 'Review queue alerts',
+    notificationType: 'review_queue_escalation',
+  },
+];
 
-      return {
-        id: category.id,
-        name: category.name,
-        reviewCount: matchingTransactions.filter((transaction) => transaction.needsReview).length,
-        tone: category.tone,
-        totalAmount: matchingTransactions.reduce((totalAmount, transaction) => totalAmount + transaction.amount, 0),
-        transactionCount: matchingTransactions.length,
-      };
-    })
-    .sort((left, right) => {
-      if (right.totalAmount !== left.totalAmount) {
-        return right.totalAmount - left.totalAmount;
-      }
-
-      return left.name.localeCompare(right.name);
-    });
-
-  const parserProfiles = [...state.parserProfiles].sort((left, right) => {
-    const statusRankDifference = profileStatusRank[left.status] - profileStatusRank[right.status];
-
-    if (statusRankDifference !== 0) {
-      return statusRankDifference;
-    }
-
-    return new Date(right.lastUsedAt).getTime() - new Date(left.lastUsedAt).getTime();
-  });
+export function buildSettingsSnapshot(summary: SettingsSummary, options: {
+  asOf?: string;
+  persistedNotificationPreferences?: PersistedNotificationPreference[];
+} = {}): SettingsSnapshot {
+  const asOf = options.asOf ?? new Date().toISOString();
+  const persistedPreferenceLookup = new Map(
+    (options.persistedNotificationPreferences ?? []).map((preference) => [
+      createNotificationPreferenceLookupKey(preference.notificationType, preference.channel),
+      preference.enabled,
+    ])
+  );
 
   return {
-    categories,
-    notificationPreferences: [...state.notificationPreferences],
-    parserProfiles,
+    categories: [...summary.categories]
+      .map((category) => ({
+        id: category.categoryId ?? 'uncategorized',
+        name: category.categoryName,
+        reviewCount: category.reviewCount,
+        totalAmount: category.totalSpend,
+        transactionCount: category.transactionCount,
+      }))
+      .sort((left, right) => {
+        if (right.totalAmount !== left.totalAmount) {
+          return right.totalAmount - left.totalAmount;
+        }
+
+        return left.name.localeCompare(right.name);
+      }),
+    notificationPreferences: notificationPreferenceCatalog.map((preference) => ({
+      channel: preference.channel,
+      description: preference.description,
+      enabled:
+        persistedPreferenceLookup.get(
+          createNotificationPreferenceLookupKey(preference.notificationType, preference.channel)
+        ) ?? preference.defaultEnabled,
+      id: preference.id,
+      label: preference.label,
+      notificationType: preference.notificationType,
+    })),
+    parserProfiles: [...summary.parserProfiles].sort((left, right) => {
+      const statusRankDifference = profileStatusRank[left.status] - profileStatusRank[right.status];
+
+      if (statusRankDifference !== 0) {
+        return statusRankDifference;
+      }
+
+      return new Date(right.lastUsedAt).getTime() - new Date(left.lastUsedAt).getTime();
+    }),
     syncHealth: {
-      failureCount: state.sync.failureCount,
-      lastAttemptLabel: formatRelativeDuration(state.sync.lastAttemptAt, asOf),
-      lastError: state.sync.lastError,
-      lastSuccessfulSyncLabel: formatRelativeDuration(state.sync.lastSuccessfulSyncAt, asOf),
-      pendingStatementCount: state.sync.pendingStatementCount,
-      status: state.sync.status,
+      failureCount: summary.syncStatus.failedStatementCount,
+      lastAttemptLabel: formatSyncAttempt(summary.syncStatus.lastAttemptAt, asOf),
+      lastError: summary.syncStatus.lastError,
+      lastSuccessfulSyncLabel: formatSyncSuccess(summary.syncStatus.lastSuccessfulSyncAt, asOf),
+      pendingStatementCount: summary.syncStatus.pendingStatementCount,
+      status: getSettingsSyncStatus(summary.syncStatus),
     },
   };
+}
+
+function createNotificationPreferenceLookupKey(
+  notificationType: SettingsNotificationType,
+  channel: NotificationPreference['channel']
+) {
+  return `${notificationType}:${channel}`;
+}
+
+function formatSyncAttempt(lastAttemptAt: string | null, asOf: string) {
+  if (!lastAttemptAt) {
+    return 'No sync attempts yet';
+  }
+
+  return formatRelativeDuration(lastAttemptAt, asOf);
+}
+
+function formatSyncSuccess(lastSuccessfulSyncAt: string | null, asOf: string) {
+  if (!lastSuccessfulSyncAt) {
+    return 'No statements synced yet';
+  }
+
+  return formatRelativeDuration(lastSuccessfulSyncAt, asOf);
+}
+
+function getSettingsSyncStatus(syncStatus: SettingsSyncSummary): SyncStatus {
+  if (syncStatus.latestParseStatus === 'failed') {
+    return 'failing';
+  }
+
+  if (
+    syncStatus.failedStatementCount > 0 ||
+    syncStatus.pendingStatementCount > 0 ||
+    syncStatus.needsReviewStatementCount > 0 ||
+    syncStatus.latestParseStatus === 'partial' ||
+    syncStatus.latestParseStatus === 'pending' ||
+    syncStatus.latestParseStatus === 'processing'
+  ) {
+    return 'degraded';
+  }
+
+  return 'healthy';
 }
