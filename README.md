@@ -19,3 +19,9 @@ Native mobile household expense-tracking app planning workspace.
 
 ## Phase 1 operations
 - Runtime setup and smoke-test runbook: `docs/phase-1-runtime-runbook.md`
+
+## Planning docs
+- Phase 1 implementation plan: `docs/phase-1-plan.md`
+- Phase 2 implementation plan: `docs/phase-2-plan.md`
+- Phase 2 WhatsApp integration runbook: `docs/phase-2-whatsapp-runbook.md`
+- Phase 2 Linear ticket drafts: `docs/phase-2-linear-issue-drafts.md`
