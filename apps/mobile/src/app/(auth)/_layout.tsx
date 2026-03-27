@@ -1,10 +1,16 @@
 import { Redirect, Stack } from 'expo-router';
 
+import { AuthLoadingScreen } from '@/features/auth/auth-loading-screen';
 import { getProtectedRedirect } from '@/features/auth/auth-routing';
 import { useAuthSession } from '@/features/auth/auth-session';
 
 export default function AuthLayout() {
   const { session } = useAuthSession();
+
+  if (session.status === 'loading') {
+    return <AuthLoadingScreen />;
+  }
+
   const redirectHref = getProtectedRedirect({
     authStatus: session.status,
     group: 'auth',

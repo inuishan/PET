@@ -8,3 +8,6 @@ local-statements/**/*.txt
 
 # Workspace installs
 node_modules/
+
+# Generated coverage artifacts
+apps/mobile/coverage/

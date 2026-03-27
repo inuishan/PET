@@ -29,7 +29,8 @@ export default function SignInScreen() {
       </Pressable>
 
       <Text style={styles.helperText}>
-        The app shell stays protected until Supabase Google OAuth is connected.
+        New Google sign-ins are still blocked, but previously saved Supabase sessions restore
+        automatically.
       </Text>
 
       {statusMessage ? <Text style={styles.statusMessage}>{statusMessage}</Text> : null}

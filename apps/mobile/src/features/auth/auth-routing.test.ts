@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { getDefaultAuthenticatedHref, getProtectedRedirect } from './auth-routing';
 
 describe('getProtectedRedirect', () => {
+  it('waits for session hydration before redirecting protected routes', () => {
+    expect(getProtectedRedirect({ authStatus: 'loading', group: 'tabs' })).toBeNull();
+    expect(getProtectedRedirect({ authStatus: 'loading', group: 'auth' })).toBeNull();
+  });
+
   it('redirects signed-out users away from tab routes', () => {
     expect(getProtectedRedirect({ authStatus: 'signed_out', group: 'tabs' })).toBe(
       '/(auth)/sign-in'

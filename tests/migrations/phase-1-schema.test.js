@@ -4,12 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 function readMigration(filename) {
-  const filePath = path.join(
-    '/mnt/hdd/workspace/expense-tracking',
-    'supabase',
-    'migrations',
-    filename,
-  );
+  const filePath = path.join(__dirname, '..', '..', 'supabase', 'migrations', filename);
 
   return fs.readFileSync(filePath, 'utf8');
 }

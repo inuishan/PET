@@ -1,15 +1,34 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const getSessionMock = vi.fn();
+const unsubscribeMock = vi.fn();
+
+vi.mock('@/lib/supabase', () => ({
+  getSupabaseClient: () => ({
+    auth: {
+      getSession: getSessionMock,
+      onAuthStateChange: () => ({
+        data: {
+          subscription: {
+            unsubscribe: unsubscribeMock,
+          },
+        },
+      }),
+    },
+  }),
+}));
 
 import {
   AuthProvider,
   GOOGLE_SIGN_IN_PENDING_MESSAGE,
+  getAuthSessionFromSupabaseSession,
   useAuthSession,
 } from './auth-session';
 
 describe('AuthProvider', () => {
-  it('provides the default signed-out session state', () => {
+  it('provides the initial loading state before session restoration completes', () => {
     let capturedSession: ReturnType<typeof useAuthSession> | null = null;
 
     function SessionReader() {
@@ -23,7 +42,7 @@ describe('AuthProvider', () => {
 
     expect(capturedSession).not.toBeNull();
     expect(capturedSession?.session).toEqual({
-      status: 'signed_out',
+      status: 'loading',
       userId: null,
     });
   });
@@ -41,6 +60,28 @@ describe('AuthProvider', () => {
     await expect(capturedSession?.startGoogleSignIn()).resolves.toEqual({
       message: GOOGLE_SIGN_IN_PENDING_MESSAGE,
       ok: false,
+    });
+  });
+});
+
+describe('getAuthSessionFromSupabaseSession', () => {
+  it('returns a signed-out session when Supabase has no active user', () => {
+    expect(getAuthSessionFromSupabaseSession(null)).toEqual({
+      status: 'signed_out',
+      userId: null,
+    });
+  });
+
+  it('returns a signed-in session when Supabase provides a user id', () => {
+    expect(
+      getAuthSessionFromSupabaseSession({
+        user: {
+          id: 'user-123',
+        },
+      })
+    ).toEqual({
+      status: 'signed_in',
+      userId: 'user-123',
     });
   });
 });
