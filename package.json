@@ -9,6 +9,7 @@
     "mobile:android": "npm --prefix apps/mobile run android",
     "mobile:start": "npm --prefix apps/mobile run start",
     "mobile:test": "npm --prefix apps/mobile run test",
+    "mobile:test:coverage": "npm --prefix apps/mobile run test:coverage",
     "mobile:lint": "npm --prefix apps/mobile run lint"
   }
 }
