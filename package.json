@@ -10,6 +10,7 @@
     "mobile:start": "npm --prefix apps/mobile run start",
     "mobile:test": "npm --prefix apps/mobile run test",
     "mobile:test:coverage": "npm --prefix apps/mobile run test:coverage",
-    "mobile:lint": "npm --prefix apps/mobile run lint"
+    "mobile:lint": "npm --prefix apps/mobile run lint",
+    "test:phase-1": "node --experimental-strip-types --loader ./tests/support/mobile-loader.mjs --test $(find tests -type f \\( -name '*.test.js' -o -name '*.test.mjs' \\))"
   }
 }
