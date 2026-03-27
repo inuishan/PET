@@ -10,7 +10,8 @@ Set these for the n8n instance:
 - `STATEMENT_PIPELINE_SHARED_SECRET`: Shared secret sent to both backend endpoints in `x-statement-pipeline-secret`.
 - `STATEMENT_PARSE_URL`: Supabase `statement-parse` function URL.
 - `STATEMENT_INGEST_URL`: Supabase `statement-ingest` function URL.
-- `CARD_PASSWORD_MAP_JSON`: JSON object mapping parser profiles or file patterns to password secret keys.
+- `STATEMENT_HOUSEHOLD_ID`: Default household UUID for statements in the watched folder.
+- `STATEMENT_FILE_ROUTING_JSON`: JSON array of file-name routing rules.
 - `PDF_TEXT_EXTRACT_COMMAND`: Local command that reads the downloaded PDF and prints extracted text. It must support password-backed PDFs.
 
 ## Local PDF extraction helper
@@ -44,13 +45,26 @@ If `pdftotext` or `qpdf` are not on `PATH`, point the helper at them with:
 - `PDFTOTEXT_BIN=/absolute/path/to/pdftotext`
 - `QPDF_BIN=/absolute/path/to/qpdf`
 
-### Password-key lookup
+### Statement routing
 
-The workflow should keep mapping parser profiles to password keys, not to raw passwords:
+The workflow resolves routing from file-name rules instead of workflow placeholders:
 
 ```bash
-export CARD_PASSWORD_MAP_JSON='{"hdfc-regalia-gold":"cards/hdfc-regalia"}'
+export STATEMENT_HOUSEHOLD_ID='11111111-1111-4111-8111-111111111111'
+export STATEMENT_FILE_ROUTING_JSON='[
+  {
+    "fileNamePattern": "hdfc.*regalia.*\\.pdf$",
+    "parserProfileName": "hdfc-regalia-gold",
+    "bankName": "HDFC Bank",
+    "cardName": "Regalia Gold",
+    "statementPasswordKey": "cards/hdfc-regalia"
+  }
+]'
 ```
+
+Each rule can override `householdId` if one watched folder needs to route to different households, but the default Phase 1 path should keep one shared household and use `STATEMENT_HOUSEHOLD_ID`.
+
+### Password-key lookup
 
 The helper resolves the raw password locally by converting the password key into an environment variable name:
 
@@ -96,7 +110,7 @@ Set these for Supabase edge functions:
 
 1. `Google Drive Trigger` watches the configured folder.
 2. `Prepare Statement Context` derives `householdId`, `parserProfileName`, `providerFileId`, and `providerFileName`.
-3. `Lookup Password Key` maps the parser profile to a password key from `CARD_PASSWORD_MAP_JSON`.
+3. `Resolve Statement Routing` maps the Drive file name to `householdId`, `parserProfileName`, optional bank/card labels, and an optional `statementPasswordKey`.
 4. `Download PDF` fetches the file from Drive to local disk or an n8n binary property.
 5. `Extract Statement Text` runs `PDF_TEXT_EXTRACT_COMMAND --password-key <key>` so the local helper resolves the actual secret without storing it in workflow execution data.
 6. `Call statement-parse` posts statement metadata plus extracted text to Supabase. The password key remains local to the extraction/ingest path and is not forwarded to the parser request.
@@ -180,3 +194,6 @@ Set these for Supabase edge functions:
 - Unsupported credits, reversals, or refunds are skipped by normalization and recorded in statement metadata.
 - Low-confidence rows are persisted with `needs_review = true` so they remain visible in totals and review flows.
 - The shared secret is required on both endpoints. Do not inline secrets directly into node parameters when n8n credentials or environment variables can hold them.
+- The repo now includes example env files plus validation and smoke-test commands:
+  - `npm run phase-1:validate-runtime`
+  - `npm run phase-1:smoke`

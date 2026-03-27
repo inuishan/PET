@@ -22,7 +22,8 @@ test('Phase 1 tab screens remain wired to dashboard and review-state models', ()
   const dashboardSource = readAppFile(path.join('(tabs)', 'index.tsx'));
   const transactionsSource = readAppFile(path.join('(tabs)', 'transactions.tsx'));
 
-  assert.match(dashboardSource, /createDashboardSnapshot/);
+  assert.match(dashboardSource, /loadDashboardSnapshot/);
+  assert.match(dashboardSource, /createDashboardQueryKey/);
   assert.match(dashboardSource, /Needs review/);
   assert.match(transactionsSource, /buildTransactionsScreenState/);
   assert.match(transactionsSource, /loadTransactionsSnapshot/);
