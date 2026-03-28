@@ -361,12 +361,12 @@ async function loadApprovedParticipants(
 }
 
 export function createHttpWhatsAppParseDispatcher(options: {
+  authToken?: string;
   fetch: typeof fetch;
-  serviceRoleKey?: string;
   timeoutMs?: number;
   url?: string;
 }) {
-  if (!options.url || !options.serviceRoleKey) {
+  if (!options.url || !options.authToken) {
     return null;
   }
 
@@ -375,7 +375,7 @@ export function createHttpWhatsAppParseDispatcher(options: {
       const response = await options.fetch(options.url as string, {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${options.serviceRoleKey}`,
+          authorization: `Bearer ${options.authToken}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify(input),

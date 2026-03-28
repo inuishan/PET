@@ -5,7 +5,6 @@ import {
 
 const internalAuthToken =
   Deno.env.get('WHATSAPP_INTERNAL_AUTH_TOKEN')
-  ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   ?? '';
 const acknowledgementsEnabled = parseBoolean(Deno.env.get('WHATSAPP_ACK_ENABLED') ?? '');
 const graphApiBaseUrl = Deno.env.get('META_GRAPH_API_BASE_URL') ?? 'https://graph.facebook.com/v23.0';

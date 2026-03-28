@@ -357,6 +357,103 @@ test('handleWhatsAppIngestRequest dispatches an optional acknowledgement for suc
   });
 });
 
+test('handleWhatsAppIngestRequest records acknowledgement results without affecting the stored ingest outcome', async () => {
+  const captured = {
+    acknowledgements: [],
+    classificationEvents: [],
+    notifications: [],
+    transactions: [],
+    updates: [],
+  };
+  const scheduledTasks = [];
+  const request = new Request('http://localhost/functions/v1/whatsapp-ingest', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer internal-secret',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: 120,
+      confidence: 0.94,
+      currency: 'INR',
+      existingParseMetadata: {
+        phoneNumberId: 'phone-number-id',
+      },
+      householdId,
+      merchantNormalized: 'zepto',
+      merchantRaw: 'Zepto',
+      messageId,
+      note: 'milk',
+      ownerMemberId,
+      ownerScope: 'member',
+      parseStatus: 'parsed',
+      participantId,
+      participantPhoneE164: '+919999888877',
+      providerMessageId: 'wamid.message-1',
+      providerSentAt: '2026-03-27T09:30:00.000Z',
+      reviewReasons: [],
+      transactionDate: '2026-03-27',
+      validationErrors: [],
+    }),
+  });
+
+  const response = await handleWhatsAppIngestRequest(request, {
+    internalAuthToken: 'internal-secret',
+    replyDispatcher: {
+      async dispatchMessage() {
+        return {
+          messageId: 'wamid.reply-1',
+          outcome: 'posted',
+          status: 'sent',
+        };
+      },
+    },
+    repository: createRepositoryStub(captured),
+    scheduleBackgroundTask(task) {
+      scheduledTasks.push(task);
+    },
+  });
+
+  const body = await response.json();
+  await Promise.allSettled(scheduledTasks);
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.data.outcome, 'posted');
+  assert.deepEqual(captured.updates, [
+    {
+      householdId,
+      messageId,
+      parseMetadata: {
+        classification: {
+          categoryId: 'category-uncategorized',
+          confidence: 0.5,
+          method: 'rules',
+          rationale: 'uncategorized_default',
+        },
+        outcome: 'posted',
+        parseStatus: 'parsed',
+        phoneNumberId: 'phone-number-id',
+        reviewReasons: [],
+        transactionId: 'transaction-1',
+      },
+      parseStatus: 'posted',
+      transactionId: 'transaction-1',
+    },
+  ]);
+  assert.deepEqual(captured.acknowledgements, [
+    {
+      acknowledgement: {
+        messageId: 'wamid.reply-1',
+        outcome: 'posted',
+        status: 'sent',
+      },
+      householdId,
+      messageId,
+    },
+  ]);
+});
+
 test('handleWhatsAppIngestRequest skips acknowledgements when reply metadata is incomplete', async () => {
   const captured = {
     classificationEvents: [],
@@ -454,6 +551,9 @@ function createRepositoryStub(captured, overrides = {}) {
     },
     async updateMessageOutcome(update) {
       captured.updates.push(update);
+    },
+    async updateMessageAcknowledgement(update) {
+      captured.acknowledgements?.push(update);
     },
   };
 }

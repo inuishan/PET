@@ -8,7 +8,7 @@ import {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const internalAuthToken = Deno.env.get('WHATSAPP_INTERNAL_AUTH_TOKEN') ?? supabaseServiceRoleKey;
+const internalAuthToken = Deno.env.get('WHATSAPP_INTERNAL_AUTH_TOKEN') ?? '';
 const ingestFunctionUrl =
   Deno.env.get('WHATSAPP_INGEST_FUNCTION_URL')
   ?? (supabaseUrl ? `${supabaseUrl}/functions/v1/whatsapp-ingest` : '');

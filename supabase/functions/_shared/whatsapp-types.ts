@@ -51,6 +51,13 @@ export type WhatsAppReplyDispatchInput = {
   recipientPhoneE164: string;
 };
 
+export type WhatsAppAcknowledgementResult = {
+  messageId?: string | null;
+  outcome: 'failed' | 'needs_review' | 'posted';
+  reason?: string | null;
+  status: 'disabled' | 'failed' | 'sent' | 'skipped';
+};
+
 export type ParseExpenseMessageInput = {
   householdId: string;
   householdMembers?: HouseholdMember[];
@@ -148,5 +155,10 @@ export type WhatsAppIngestRepository = {
     parseMetadata: Record<string, unknown>;
     parseStatus: 'failed' | 'needs_review' | 'posted';
     transactionId: string | null;
+  }) => Promise<void>;
+  updateMessageAcknowledgement?: (update: {
+    acknowledgement: WhatsAppAcknowledgementResult;
+    householdId: string;
+    messageId: string;
   }) => Promise<void>;
 };

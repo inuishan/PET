@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createHttpWhatsAppParseDispatcher,
   createSupabaseWhatsAppRepository,
   handleWhatsAppWebhookRequest,
 } from '../../supabase/functions/_shared/whatsapp-ingestion.ts';
@@ -407,6 +408,29 @@ test('createSupabaseWhatsAppRepository looks up approved participants and insert
   assert.equal(calls.filter((call) => call.table === 'whatsapp_messages' && call.type === 'insert').length, 2);
   assert.equal(calls.filter((call) => call.table === 'whatsapp_messages' && call.type === 'select').length, 2);
   assert.equal(calls.filter((call) => call.table === 'whatsapp_messages' && call.type === 'update').length, 1);
+});
+
+test('createHttpWhatsAppParseDispatcher uses the dedicated internal auth token for parse handoff', async () => {
+  const requests = [];
+  const dispatcher = createHttpWhatsAppParseDispatcher({
+    authToken: 'internal-secret',
+    fetch: async (url, init) => {
+      requests.push({ init, url });
+      return new Response(null, { status: 200 });
+    },
+    url: 'https://project-ref.supabase.co/functions/v1/whatsapp-parse',
+  });
+
+  await dispatcher.dispatchMessage({
+    householdId: approvedParticipant.householdId,
+    messageId: '44444444-4444-4444-8444-444444444444',
+    participantId: approvedParticipant.id,
+    providerMessageId: 'wamid.message-1',
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'https://project-ref.supabase.co/functions/v1/whatsapp-parse');
+  assert.equal(requests[0].init.headers.authorization, 'Bearer internal-secret');
 });
 
 function buildInboundWebhookPayload(overrides = {}) {

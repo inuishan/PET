@@ -1,6 +1,6 @@
 # Phase 2 WhatsApp Runtime Runbook
 
-This runbook turns the checked-in Phase 2 WhatsApp code into a reproducible runtime path. It covers Meta setup, Supabase function configuration, participant approval, safe acknowledgement behavior, and the minimum validation flow for happy-path, rejection-path, and review-path testing.
+This runbook turns the checked-in Phase 2 WhatsApp code into a reproducible runtime path. It covers Meta setup, Supabase function configuration, participant approval, safe acknowledgement behavior, and the validation order for replay-based smoke checks plus real Meta test-number confirmation.
 
 ## Files to fill in
 
@@ -9,6 +9,15 @@ Copy and edit:
 - `supabase/.env.functions.phase2.example`
 
 Phase 2 currently ships one function-side runtime contract file. Keep the deployed secrets aligned with that file so local validation and hosted behavior match.
+
+The same file now also supports optional live-validation defaults:
+
+- `PHASE2_VALIDATION_HOUSEHOLD_ID`
+- `PHASE2_VALIDATION_APPROVED_PHONE_E164`
+- `PHASE2_VALIDATION_APPROVED_DISPLAY_NAME`
+- `PHASE2_VALIDATION_APPROVED_MEMBER_ID`
+- `PHASE2_VALIDATION_REJECTED_PHONE_E164`
+- `PHASE2_VALIDATION_OWNER_ACCESS_TOKEN`
 
 ## Runtime shape
 
@@ -48,7 +57,7 @@ Behavior notes:
 - `WHATSAPP_ACK_ENABLED` should stay `false` until the rest of the WhatsApp runtime is verified.
 - If `WHATSAPP_ACK_ENABLED=false`, or if the reply function has no access token, acknowledgements remain disabled without blocking webhook, parse, or ingest.
 - `META_GRAPH_API_BASE_URL` should be pinned to the Graph API version you have tested against.
-- `WHATSAPP_INTERNAL_AUTH_TOKEN` should be a dedicated shared secret for the internal function-to-function calls. Do not reuse a client-visible token.
+- `WHATSAPP_INTERNAL_AUTH_TOKEN` must be a dedicated shared secret for the internal function-to-function calls. Do not reuse `SUPABASE_SERVICE_ROLE_KEY`.
 
 Deploy all four functions with those secrets available:
 
@@ -63,6 +72,12 @@ Apply the database migrations before testing:
 
 ```bash
 supabase db push
+```
+
+Validate the env file before deploying:
+
+```bash
+npm run phase-2:validate-runtime
 ```
 
 ## Meta setup
@@ -128,6 +143,24 @@ Confirm:
 - `whatsapp_participants` contains the approved sender
 - `WHATSAPP_ACK_ENABLED=false` for the first pass
 
+Recommended command:
+
+```bash
+npm run phase-2:validate-live -- --mode live --delivery webhook-replay
+```
+
+What the replay validator covers:
+
+- webhook verification challenge against the deployed `whatsapp-webhook`
+- approved-participant seeding through the owner RPC when `PHASE2_VALIDATION_OWNER_ACCESS_TOKEN` is present, otherwise a service-role upsert fallback
+- happy-path, duplicate-delivery, rejection-path, review-path, and parse-failure replay against the deployed functions
+- persisted acknowledgement state under `whatsapp_messages.parse_metadata.acknowledgement`
+
+What still needs a real Meta-delivered message:
+
+- proof that Meta is actually delivering the inbound webhook from the test number
+- successful acknowledgement sends, because Meta only accepts reply context tied to a real inbound provider message id
+
 ### 2. Happy path
 
 Send a message from an approved number:
@@ -144,7 +177,7 @@ Confirm:
 - one `transactions` row is created with `source_type = 'upi_whatsapp'`
 - the transaction has the expected amount, merchant, owner, and `source_reference`
 - no duplicate rows appear if Meta retries the webhook
-- no WhatsApp acknowledgement is sent while `WHATSAPP_ACK_ENABLED=false`
+- `whatsapp_messages.parse_metadata.acknowledgement.status` is `disabled` while `WHATSAPP_ACK_ENABLED=false`
 
 ### 3. Rejection path
 
@@ -185,6 +218,7 @@ Confirm:
 - the message parse status reaches `failed`
 - no transaction row is created
 - household notifications are created for manual follow-up
+- `whatsapp_messages.parse_metadata.acknowledgement.status` remains `disabled` while acknowledgements are off
 
 ### 6. Acknowledgement validation
 
@@ -200,6 +234,7 @@ Confirm:
 - posted outcomes send a short success acknowledgement
 - review outcomes send a short review-needed acknowledgement
 - parse-failure outcomes send a short failure acknowledgement
+- `whatsapp_messages.parse_metadata.acknowledgement.status` becomes `sent` and stores the reply message id when Meta accepts the acknowledgement
 - acknowledgements are skipped when the message is outside the configured reply window
 - if the reply send fails, the original ingest result still persists correctly
 
@@ -250,6 +285,7 @@ Look for:
 - stale `META_GRAPH_API_BASE_URL`
 - reply-window expiry
 - acknowledgement send failures after a successful ingest
+- missing or stale `parse_metadata.acknowledgement`
 
 ## Repo-level verification
 
@@ -263,6 +299,9 @@ node --experimental-strip-types --test \
   tests/functions/whatsapp-reply.test.mjs
 ```
 
-Current gap:
+Run the dedicated Phase 2 validator before the final manual Meta pass:
 
-- The repo does not yet include a dedicated Phase 2 runtime validator or live smoke script comparable to Phase 1. For now, use the function tests plus the manual validation order above on the deployed runtime.
+```bash
+npm run phase-2:validate-live -- --mode mock
+npm run phase-2:validate-live -- --mode live --delivery webhook-replay
+```

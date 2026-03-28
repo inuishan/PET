@@ -1,6 +1,8 @@
 import { createSupabaseWhatsAppIngestRepository } from './whatsapp-review-repository.ts';
+import { normalizeAcknowledgementResult } from './whatsapp-reply.ts';
 import type {
   ParsedWhatsAppExpense,
+  WhatsAppAcknowledgementResult,
   WhatsAppReplyDispatchInput,
   WhatsAppIngestRepository,
 } from './whatsapp-types.ts';
@@ -10,10 +12,11 @@ const WHATSAPP_NOTIFICATION_CHANNEL = 'push';
 const DEFAULT_REPLY_TIMEOUT_MS = 5_000;
 
 type IngestDependencies = {
+  acknowledgementsEnabled?: boolean;
   internalAuthToken?: string;
   repository?: WhatsAppIngestRepository;
   replyDispatcher?: {
-    dispatchMessage: (input: WhatsAppReplyDispatchInput) => Promise<unknown>;
+    dispatchMessage: (input: WhatsAppReplyDispatchInput) => Promise<WhatsAppAcknowledgementResult>;
   } | null;
   scheduleBackgroundTask?: (task: Promise<unknown>) => void;
 };
@@ -106,7 +109,12 @@ export async function handleWhatsAppIngestRequest(
         parseStatus: 'failed',
         transactionId: null,
       });
-      queueOptionalAcknowledgement(dependencies, createAcknowledgementDispatchInput(input, 'failed'));
+      queueOptionalAcknowledgement(dependencies, {
+        dispatchInput: createAcknowledgementDispatchInput(input, 'failed'),
+        householdId: input.householdId,
+        messageId: input.messageId,
+        outcome: 'failed',
+      });
 
       return jsonResponse(200, {
         success: true,
@@ -187,7 +195,12 @@ export async function handleWhatsAppIngestRequest(
     });
     queueOptionalAcknowledgement(
       dependencies,
-      createAcknowledgementDispatchInput(input, outcome),
+      {
+        dispatchInput: createAcknowledgementDispatchInput(input, outcome),
+        householdId: input.householdId,
+        messageId: input.messageId,
+        outcome,
+      },
     );
 
     return jsonResponse(200, {
@@ -230,6 +243,9 @@ export function createHttpWhatsAppReplyDispatcher(options: HttpDispatcherOptions
       if (!response.ok) {
         throw new Error(`WhatsApp reply handoff failed with ${response.status}`);
       }
+
+      const payload = await readJsonResponse(response);
+      return normalizeAcknowledgementResult(payload?.data ?? {}, input.outcome);
     },
   };
 }
@@ -404,15 +420,59 @@ function createAcknowledgementDispatchInput(
 
 function queueOptionalAcknowledgement(
   dependencies: IngestDependencies,
-  input: WhatsAppReplyDispatchInput | null,
+  input: {
+    dispatchInput: WhatsAppReplyDispatchInput | null;
+    householdId: string;
+    messageId: string;
+    outcome: 'failed' | 'needs_review' | 'posted';
+  },
 ) {
-  if (!dependencies.replyDispatcher || !input) {
+  if (!input.dispatchInput) {
+    void recordAcknowledgementResult(dependencies.repository, {
+      acknowledgement: {
+        outcome: input.outcome,
+        reason: 'missing_context',
+        status: 'skipped',
+      },
+      householdId: input.householdId,
+      messageId: input.messageId,
+    });
     return;
   }
 
-  const job = dependencies.replyDispatcher.dispatchMessage(input).catch((error) => {
-    console.error('whatsapp-ingest acknowledgement dispatch failed', error);
-  });
+  if (!dependencies.replyDispatcher) {
+    void recordAcknowledgementResult(dependencies.repository, {
+      acknowledgement: {
+        outcome: input.outcome,
+        reason: dependencies.acknowledgementsEnabled ? 'reply_dispatcher_unavailable' : 'acknowledgements_disabled',
+        status: 'disabled',
+      },
+      householdId: input.householdId,
+      messageId: input.messageId,
+    });
+    return;
+  }
+
+  const job = dependencies.replyDispatcher
+    .dispatchMessage(input.dispatchInput)
+    .then((acknowledgement) =>
+      recordAcknowledgementResult(dependencies.repository, {
+        acknowledgement,
+        householdId: input.householdId,
+        messageId: input.messageId,
+      }))
+    .catch(async (error) => {
+      console.error('whatsapp-ingest acknowledgement dispatch failed', error);
+      await recordAcknowledgementResult(dependencies.repository, {
+        acknowledgement: {
+          outcome: input.outcome,
+          reason: 'dispatch_failed',
+          status: 'failed',
+        },
+        householdId: input.householdId,
+        messageId: input.messageId,
+      });
+    });
 
   if (typeof dependencies.scheduleBackgroundTask === 'function') {
     dependencies.scheduleBackgroundTask(job);
@@ -420,6 +480,25 @@ function queueOptionalAcknowledgement(
   }
 
   void job;
+}
+
+async function recordAcknowledgementResult(
+  repository: WhatsAppIngestRepository | undefined,
+  input: {
+    acknowledgement: WhatsAppAcknowledgementResult;
+    householdId: string;
+    messageId: string;
+  },
+) {
+  if (typeof repository?.updateMessageAcknowledgement !== 'function') {
+    return;
+  }
+
+  try {
+    await repository.updateMessageAcknowledgement(input);
+  } catch (error) {
+    console.error('whatsapp acknowledgement status update failed', error);
+  }
 }
 
 function isAuthorizedRequest(request: Request, internalAuthToken?: string) {
@@ -464,4 +543,18 @@ function normalizeOptionalString(value: unknown) {
 
   const normalized = String(value).trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+async function readJsonResponse(response: Response) {
+  const contentType = response.headers.get('content-type') ?? '';
+
+  if (!/application\/json/i.test(contentType)) {
+    return null;
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
