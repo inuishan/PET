@@ -2,167 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildAnalyticsReportScreenState } from '../../apps/mobile/src/features/analytics/analytics-report-model.ts';
-
-const report = {
-  comparison: {
-    deltaPercentage: 11.6,
-    deltaSpend: 2630,
-    previousSpend: 22670,
-  },
-  generatedAt: '2026-03-28T05:45:00.000Z',
-  id: 'report-1',
-  insights: [
-    {
-      evidencePayload: [],
-      estimatedMonthlyImpact: 1500,
-      generatedAt: '2026-03-28T05:40:00.000Z',
-      generatedFrom: {
-        metrics: {
-          currentSpend: 13250,
-          previousSpend: 11250,
-        },
-        periodEnd: '2026-03-31',
-        periodStart: '2026-03-01',
-        signalKey: 'category_overspending',
-        signalVersion: 'phase3e_v1',
-        source: 'deterministic',
-        supportingTransactionIds: ['txn-003', 'txn-005'],
-      },
-      id: 'insight-overspend',
-      recommendation: 'Reduce food delivery frequency by one order each week.',
-      summary: 'Food delivery is up 18% versus the prior period.',
-      title: 'Food delivery spend is climbing',
-      type: 'overspending',
-    },
-    {
-      evidencePayload: [],
-      estimatedMonthlyImpact: 129,
-      generatedAt: '2026-03-28T05:41:00.000Z',
-      generatedFrom: {
-        metrics: {
-          duplicateCount: 2,
-        },
-        periodEnd: '2026-03-31',
-        periodStart: '2026-03-01',
-        signalKey: 'duplicate_subscription',
-        signalVersion: 'phase3e_v1',
-        source: 'deterministic',
-        supportingTransactionIds: ['txn-011', 'txn-012'],
-      },
-      id: 'insight-duplicate-subscription',
-      recommendation: 'Keep one Spotify plan and cancel the extra renewal before next month.',
-      summary: '2 charges landed for the same subscription family this cycle.',
-      title: 'Spotify looks like a duplicate subscription',
-      type: 'duplicate_subscription',
-    },
-    {
-      evidencePayload: [],
-      estimatedMonthlyImpact: 700,
-      generatedAt: '2026-03-28T05:42:00.000Z',
-      generatedFrom: {
-        metrics: {
-          weekendShare: 90,
-        },
-        periodEnd: '2026-03-31',
-        periodStart: '2026-03-01',
-        signalKey: 'weekend_category_pattern',
-        signalVersion: 'phase3e_v1',
-        source: 'deterministic',
-        supportingTransactionIds: ['txn-021', 'txn-022', 'txn-023'],
-      },
-      id: 'insight-weekend-pattern',
-      recommendation: 'Plan weekend meals in advance so fewer impulse orders hit the highest-spend days.',
-      summary: '90% of dining spend landed on weekends this month.',
-      title: 'Dining spend is clustering on weekends',
-      type: 'category_pattern',
-    },
-    {
-      evidencePayload: [],
-      estimatedMonthlyImpact: 14300,
-      generatedAt: '2026-03-28T05:43:00.000Z',
-      generatedFrom: {
-        metrics: {
-          currentSpend: 14300,
-        },
-        periodEnd: '2026-03-31',
-        periodStart: '2026-03-01',
-        signalKey: 'merchant_spike',
-        signalVersion: 'phase3e_v1',
-        source: 'deterministic',
-        supportingTransactionIds: ['txn-031'],
-      },
-      id: 'insight-spike',
-      recommendation: 'Review the Croma purchase and confirm it belongs in this month’s household baseline.',
-      summary: 'Croma produced a one-off merchant spike that sits well above the prior baseline.',
-      title: 'Croma is well above the normal monthly baseline',
-      type: 'unusual_spike',
-    },
-    {
-      evidencePayload: [],
-      estimatedMonthlyImpact: 1200,
-      generatedAt: '2026-03-28T05:44:00.000Z',
-      generatedFrom: {
-        metrics: {
-          currentSpend: 9820,
-          previousSpend: 8120,
-        },
-        periodEnd: '2026-03-31',
-        periodStart: '2026-03-01',
-        signalKey: 'grocery_savings',
-        signalVersion: 'phase3e_v1',
-        source: 'deterministic',
-        supportingTransactionIds: ['txn-041', 'txn-042'],
-      },
-      id: 'insight-savings',
-      recommendation: 'Shift one weekly grocery basket to the lower-priced store.',
-      summary: 'Groceries rose faster than overall household spend.',
-      title: 'Groceries are outpacing the rest of the ledger',
-      type: 'savings_opportunity',
-    },
-  ],
-  payload: {
-    sections: [
-      {
-        body: 'Dining and electronics were the clearest spend drivers this month.',
-        id: 'major-spend-shifts',
-        insightIds: ['insight-overspend', 'insight-spike'],
-        title: 'Major spend shifts',
-      },
-      {
-        body: 'Groceries still offer the clearest savings lever in the current cycle.',
-        id: 'savings-opportunities',
-        insightIds: ['insight-savings'],
-        title: 'Savings opportunities',
-      },
-      {
-        body: 'One recurring charge cluster needs a keep-or-cancel review.',
-        id: 'recurring-charge-findings',
-        insightIds: ['insight-duplicate-subscription'],
-        title: 'Recurring-charge findings',
-      },
-      {
-        body: 'Weekend dining remains unusually concentrated.',
-        id: 'unusual-patterns',
-        insightIds: ['insight-weekend-pattern'],
-        title: 'Unusual patterns',
-      },
-      {
-        body: 'Review the spike, cancel the duplicate, and reset one grocery habit this week.',
-        id: 'recommended-next-actions',
-        insightIds: ['insight-spike', 'insight-duplicate-subscription', 'insight-savings'],
-        title: 'Recommended next actions',
-      },
-    ],
-    summaryInsightIds: ['insight-overspend', 'insight-savings'],
-  },
-  periodEnd: '2026-03-31',
-  periodStart: '2026-03-01',
-  reportType: 'monthly',
-  summary: 'March spend increased by ₹2,630 versus February, with food delivery and one large electronics purchase driving the change.',
-  title: 'March household savings report',
-};
+import { createPhase3AnalyticsReport } from '../support/phase-3-fixtures.mjs';
 
 test('Phase 3E analytics report UI state builds explicit sections and drill-down evidence sets', () => {
+  const report = createPhase3AnalyticsReport();
   const screenState = buildAnalyticsReportScreenState(report);
 
   assert.equal(screenState.hero.periodLabel, 'March 2026');
@@ -196,6 +39,7 @@ test('Phase 3E analytics report UI state builds explicit sections and drill-down
 });
 
 test('Phase 3E analytics report UI state shows empty placeholders instead of fabricating missing sections', () => {
+  const report = createPhase3AnalyticsReport();
   const screenState = buildAnalyticsReportScreenState({
     ...report,
     payload: {
