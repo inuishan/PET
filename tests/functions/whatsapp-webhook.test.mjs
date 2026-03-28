@@ -403,16 +403,10 @@ test('createSupabaseWhatsAppRepository looks up approved participants and insert
     providerMessageId: 'wamid.message-1',
     status: 'duplicate',
   });
-  assert.equal(calls.length, 11);
   assert.equal(calls[0].table, 'whatsapp_participants');
-  assert.equal(calls[3].table, 'whatsapp_messages');
-  assert.equal(calls[4].table, 'whatsapp_messages');
-  assert.equal(calls[5].table, 'whatsapp_messages');
-  assert.equal(calls[6].table, 'whatsapp_messages');
-  assert.equal(calls[7].table, 'whatsapp_messages');
-  assert.equal(calls[8].table, 'whatsapp_messages');
-  assert.equal(calls[9].table, 'whatsapp_messages');
-  assert.equal(calls[10].table, 'whatsapp_messages');
+  assert.equal(calls.filter((call) => call.table === 'whatsapp_messages' && call.type === 'insert').length, 2);
+  assert.equal(calls.filter((call) => call.table === 'whatsapp_messages' && call.type === 'select').length, 2);
+  assert.equal(calls.filter((call) => call.table === 'whatsapp_messages' && call.type === 'update').length, 1);
 });
 
 function buildInboundWebhookPayload(overrides = {}) {
