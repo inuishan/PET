@@ -4,6 +4,8 @@ import {
 import { handleWhatsAppParseRequest } from '../../supabase/functions/_shared/whatsapp-parser.ts';
 import { handleWhatsAppIngestRequest } from '../../supabase/functions/_shared/whatsapp-review.ts';
 import { handleWhatsAppReplyRequest } from '../../supabase/functions/_shared/whatsapp-reply.ts';
+import { resolveMerchantClassificationMemory } from '../../supabase/functions/_shared/classification-memory.ts';
+import { normalizeMerchantName } from '../../supabase/functions/_shared/merchant-normalization.mjs';
 
 const APP_SECRET = 'meta-app-secret';
 const INTERNAL_AUTH_TOKEN = 'internal-secret';
@@ -36,6 +38,7 @@ export function createPhase2WhatsAppHarness(options = {}) {
     participants: [],
     replyResults: [],
     sentReplies: [],
+    merchantAliases: [],
     transactions: [],
   };
 
@@ -201,32 +204,79 @@ export function createPhase2WhatsAppHarness(options = {}) {
 
   const ingestRepository = {
     async classifyParsedTransaction(input) {
-      const merchant = (input.merchantNormalized ?? input.merchantRaw ?? '').toLowerCase();
+      const merchant = normalizeMerchantName(input.merchantNormalized ?? input.merchantRaw ?? '');
+      const memory = resolveMerchantClassificationMemory({
+        aliases: state.merchantAliases
+          .filter((alias) => alias.household_id === input.householdId)
+          .map((alias) => ({
+            active: alias.active,
+            categoryId: alias.category_id,
+            confidence: alias.confidence,
+            confirmationCount: alias.confirmation_count,
+            normalizedMerchantName: alias.normalized_merchant_name,
+            rawMerchantName: alias.raw_merchant_name,
+          })),
+        historicalMatches: state.transactions
+          .filter((transaction) =>
+            transaction.household_id === input.householdId
+            && transaction.merchant_normalized === merchant
+            && transaction.needs_review === false
+          )
+          .map((transaction) => ({
+            categoryId: transaction.category_id,
+            classificationMethod: transaction.classification_method,
+            confidence: transaction.confidence,
+            merchantNormalized: transaction.merchant_normalized,
+          })),
+        merchantNormalized: merchant,
+        merchantRaw: input.merchantRaw ?? merchant,
+      });
+
+      if (memory.outcome === 'reuse' && memory.match) {
+        return {
+          categoryId: memory.match.categoryId,
+          confidence: memory.match.confidence,
+          method: 'inherited',
+          rationale: memory.match.rationale,
+        };
+      }
 
       if (/(zepto|blinkit|instamart|bigbasket)/.test(merchant)) {
-        return {
+        const fallback = {
           categoryId: 'category-groceries',
           confidence: 0.91,
           method: 'rules',
           rationale: 'merchant_keyword_match',
         };
+
+        return memory.outcome === 'ambiguous'
+          ? { ...fallback, reviewReason: memory.reviewReason }
+          : fallback;
       }
 
       if (/(uber|ola|rapido|taxi|metro)/.test(merchant)) {
-        return {
+        const fallback = {
           categoryId: 'category-transport',
           confidence: 0.88,
           method: 'rules',
           rationale: 'merchant_keyword_match',
         };
+
+        return memory.outcome === 'ambiguous'
+          ? { ...fallback, reviewReason: memory.reviewReason }
+          : fallback;
       }
 
-      return {
+      const fallback = {
         categoryId: 'category-uncategorized',
         confidence: 0.5,
         method: 'rules',
         rationale: 'uncategorized_default',
       };
+
+      return memory.outcome === 'ambiguous'
+        ? { ...fallback, reviewReason: memory.reviewReason }
+        : fallback;
     },
 
     async createClassificationEvent(event) {
@@ -255,12 +305,14 @@ export function createPhase2WhatsAppHarness(options = {}) {
       state.transactions.push({
         amount: transaction.amount,
         category_id: transaction.categoryId,
+        classification_method: transaction.classificationMethod,
         confidence: transaction.confidence,
         created_at: nowIso,
         description: transaction.description ?? null,
         fingerprint: transaction.fingerprint,
         household_id: transaction.householdId,
         id: transactionId,
+        merchant_normalized: transaction.merchantNormalized,
         merchant_raw: transaction.merchantRaw,
         metadata: { ...transaction.metadata },
         needs_review: transaction.needsReview,
@@ -655,10 +707,56 @@ function reassignTransactionCategory(args, state) {
     throw new Error('Transaction not found');
   }
 
+  const previousCategoryId = transaction.category_id;
   transaction.category_id = args.next_category_id;
+  transaction.classification_method = 'manual';
   transaction.needs_review = false;
   transaction.review_reason = null;
   transaction.status = 'processed';
+
+  const existingAlias = state.merchantAliases.find((alias) =>
+    alias.household_id === transaction.household_id
+    && alias.raw_merchant_name === transaction.merchant_raw
+  );
+
+  if (existingAlias) {
+    existingAlias.active = true;
+    existingAlias.category_id = args.next_category_id;
+    existingAlias.confidence = 1;
+    existingAlias.confirmation_count = (existingAlias.confirmation_count ?? 0) + 1;
+    existingAlias.last_confirmed_at = new Date().toISOString();
+    existingAlias.normalized_merchant_name = transaction.merchant_normalized ?? normalizeMerchantName(transaction.merchant_raw);
+    existingAlias.source_transaction_id = transaction.id;
+  } else {
+    state.merchantAliases.push({
+      active: true,
+      category_id: args.next_category_id,
+      confidence: 1,
+      confirmation_count: 1,
+      household_id: transaction.household_id,
+      id: `alias-${state.merchantAliases.length + 1}`,
+      last_confirmed_at: new Date().toISOString(),
+      normalized_merchant_name: transaction.merchant_normalized ?? normalizeMerchantName(transaction.merchant_raw),
+      raw_merchant_name: transaction.merchant_raw,
+      source_transaction_id: transaction.id,
+    });
+  }
+
+  state.classificationEvents.push({
+    confidence: transaction.confidence,
+    householdId: transaction.household_id,
+    metadata: {
+      source: 'mobile_transactions_tab',
+      learnedAlias: true,
+    },
+    method: 'manual',
+    nextCategoryId: args.next_category_id,
+    previousCategoryId,
+    rationale: previousCategoryId === args.next_category_id
+      ? 'review_cleared_from_mobile_review'
+      : 'category_reassigned_from_mobile_review',
+    transactionId: transaction.id,
+  });
 
   return {
     transactionId: transaction.id,

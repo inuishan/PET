@@ -89,6 +89,7 @@ export type ClassificationResult = {
   confidence: number | null;
   method: 'inherited' | 'llm' | 'manual' | 'rules';
   rationale: string;
+  reviewReason?: string | null;
 };
 
 export type NotificationRecipient = {

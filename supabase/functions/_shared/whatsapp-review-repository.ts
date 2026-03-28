@@ -1,3 +1,5 @@
+import { resolveMerchantClassificationMemory } from './classification-memory.ts';
+import { normalizeMerchantName } from './merchant-normalization.mjs';
 import type {
   ClassificationResult,
   ParsedWhatsAppExpense,
@@ -9,27 +11,67 @@ export function createSupabaseWhatsAppIngestRepository(supabase: {
 }): WhatsAppIngestRepository {
   return {
     async classifyParsedTransaction(input) {
+      const merchantNormalized = normalizeMerchantName(input.merchantNormalized ?? input.merchantRaw ?? '');
       const aliasResult = await supabase
         .from('merchant_aliases')
-        .select('category_id,confidence')
+        .select('raw_merchant_name,normalized_merchant_name,category_id,confidence,confirmation_count,active')
         .eq('household_id', input.householdId)
-        .eq('normalized_merchant_name', input.merchantNormalized ?? '')
-        .maybeSingle();
+        .eq('normalized_merchant_name', merchantNormalized);
 
       if (aliasResult.error) {
         throw new Error(`Failed to load merchant aliases: ${aliasResult.error.message}`);
       }
 
-      if (aliasResult.data?.category_id) {
+      const historicalResult = await supabase
+        .from('transactions')
+        .select('merchant_normalized,category_id,classification_method,confidence')
+        .eq('household_id', input.householdId)
+        .eq('merchant_normalized', merchantNormalized)
+        .eq('needs_review', false)
+        .limit(10);
+
+      if (historicalResult.error) {
+        throw new Error(`Failed to load historical classifications: ${historicalResult.error.message}`);
+      }
+
+      const memoryResult = resolveMerchantClassificationMemory({
+        aliases: (aliasResult.data ?? []).map((alias: any) => ({
+          active: alias.active ?? true,
+          categoryId: alias.category_id ?? null,
+          confidence: alias.confidence ?? null,
+          confirmationCount: alias.confirmation_count ?? null,
+          normalizedMerchantName: alias.normalized_merchant_name ?? merchantNormalized,
+          rawMerchantName: alias.raw_merchant_name ?? '',
+        })),
+        historicalMatches: (historicalResult.data ?? []).map((entry: any) => ({
+          categoryId: entry.category_id ?? null,
+          classificationMethod: entry.classification_method,
+          confidence: entry.confidence ?? null,
+          merchantNormalized: entry.merchant_normalized ?? merchantNormalized,
+        })),
+        merchantNormalized,
+        merchantRaw: input.merchantRaw ?? merchantNormalized,
+      });
+
+      if (memoryResult.outcome === 'reuse' && memoryResult.match) {
         return {
-          categoryId: aliasResult.data.category_id,
-          confidence: aliasResult.data.confidence ?? input.confidence,
+          categoryId: memoryResult.match.categoryId,
+          confidence: memoryResult.match.confidence ?? input.confidence,
           method: 'inherited',
-          rationale: 'merchant_alias_match',
+          rationale: memoryResult.match.rationale,
         };
       }
 
-      return classifyWithSystemCategories(supabase, input);
+      const fallback = await classifyWithSystemCategories(supabase, input);
+
+      if (memoryResult.outcome === 'ambiguous') {
+        return {
+          ...fallback,
+          reviewReason: memoryResult.reviewReason,
+        };
+      }
+
+      return fallback;
     },
 
     async createClassificationEvent(event) {
@@ -261,10 +303,6 @@ function resolveSystemCategoryName(merchant: string) {
   }
 
   return 'Uncategorized';
-}
-
-function normalizeMerchantName(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/gi, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function uniqueValues(values: string[]) {

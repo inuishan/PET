@@ -1,3 +1,4 @@
+import { resolveMerchantClassificationMemory } from './classification-memory.ts';
 import {
   StatementValidationError,
   buildStatementUploadRecord,
@@ -41,9 +42,31 @@ export async function handleStatementIngestRequest(request, dependencies) {
       providerFileId: statementUpload.providerFileId,
       providerFileName: statementUpload.providerFileName,
     };
-    const transactions = buildTransactionRecords(normalizedPayload);
-    const savedStatementUpload = await dependencies.repository.ingestStatement(statementUpload, transactions);
+    let transactions = buildTransactionRecords(normalizedPayload);
+
+    if (typeof dependencies.repository.classifyTransactions === 'function') {
+      transactions = await dependencies.repository.classifyTransactions(statementUpload, transactions);
+    }
+
     const reviewCount = transactions.filter((transaction) => transaction.needsReview).length;
+    const nextParseStatus = resolveStatementParseStatus({
+      reviewCount,
+      skippedRowCount: normalizedPayload.skippedRows.length,
+      transactionCount: transactions.length,
+    });
+
+    statementUpload.parseStatus = nextParseStatus;
+    statementUpload.rawMetadata = {
+      ...(statementUpload.rawMetadata ?? {}),
+      parserSummary: {
+        ...(statementUpload.rawMetadata?.parserSummary ?? {}),
+        needsReviewCount: reviewCount,
+        parseStatus: nextParseStatus,
+        transactionCount: transactions.length,
+      },
+    };
+
+    const savedStatementUpload = await dependencies.repository.ingestStatement(statementUpload, transactions);
 
     if (reviewCount > 0) {
       await notifyAlert(dependencies.alerts?.notifyReviewQueueEscalation, {
@@ -92,6 +115,95 @@ export async function handleStatementIngestRequest(request, dependencies) {
 
 export function createSupabaseStatementRepository(supabase) {
   return {
+    async classifyTransactions(statementUpload, transactions) {
+      const normalizedMerchantNames = [...new Set(
+        transactions
+          .map((transaction) => transaction.merchantNormalized)
+          .filter(Boolean),
+      )];
+
+      if (normalizedMerchantNames.length === 0) {
+        return transactions;
+      }
+
+      const aliasResult = await supabase
+        .from('merchant_aliases')
+        .select('raw_merchant_name,normalized_merchant_name,category_id,confidence,confirmation_count,active')
+        .eq('household_id', statementUpload.householdId)
+        .in('normalized_merchant_name', normalizedMerchantNames);
+
+      if (aliasResult.error) {
+        throw new Error(`statement memory lookup failed: ${aliasResult.error.message}`);
+      }
+
+      const historicalResult = await supabase
+        .from('transactions')
+        .select('merchant_normalized,category_id,classification_method,confidence')
+        .eq('household_id', statementUpload.householdId)
+        .eq('needs_review', false)
+        .in('merchant_normalized', normalizedMerchantNames)
+        .limit(100);
+
+      if (historicalResult.error) {
+        throw new Error(`statement history lookup failed: ${historicalResult.error.message}`);
+      }
+
+      const aliasesByMerchant = groupBy(aliasResult.data ?? [], (entry) => entry.normalized_merchant_name);
+      const historicalByMerchant = groupBy(historicalResult.data ?? [], (entry) => entry.merchant_normalized);
+
+      return transactions.map((transaction) => {
+        const memoryResult = resolveMerchantClassificationMemory({
+          aliases: (aliasesByMerchant.get(transaction.merchantNormalized) ?? []).map((alias) => ({
+            active: alias.active ?? true,
+            categoryId: alias.category_id ?? null,
+            confidence: alias.confidence ?? null,
+            confirmationCount: alias.confirmation_count ?? null,
+            normalizedMerchantName: alias.normalized_merchant_name ?? transaction.merchantNormalized,
+            rawMerchantName: alias.raw_merchant_name ?? '',
+          })),
+          historicalMatches: (historicalByMerchant.get(transaction.merchantNormalized) ?? []).map((entry) => ({
+            categoryId: entry.category_id ?? null,
+            classificationMethod: entry.classification_method,
+            confidence: entry.confidence ?? null,
+            merchantNormalized: entry.merchant_normalized ?? transaction.merchantNormalized,
+          })),
+          merchantNormalized: transaction.merchantNormalized,
+          merchantRaw: transaction.merchantRaw,
+        });
+
+        if (memoryResult.outcome === 'reuse' && memoryResult.match) {
+          return {
+            ...transaction,
+            categoryId: memoryResult.match.categoryId,
+            classificationMethod: 'inherited',
+            confidence: memoryResult.match.confidence ?? transaction.confidence,
+            metadata: {
+              ...transaction.metadata,
+              classificationRationale: memoryResult.match.rationale,
+              classificationSource: memoryResult.match.source,
+            },
+          };
+        }
+
+        if (memoryResult.outcome === 'ambiguous') {
+          const reviewReason = mergeReviewReason(transaction.reviewReason, memoryResult.reviewReason);
+
+          return {
+            ...transaction,
+            needsReview: true,
+            reviewReason,
+            status: transaction.status === 'flagged' ? 'flagged' : 'needs_review',
+            metadata: {
+              ...transaction.metadata,
+              classificationSource: 'household_memory_conflict',
+            },
+          };
+        }
+
+        return transaction;
+      });
+    },
+
     async ingestStatement(statementUpload, transactions) {
       const { data, error } = await supabase.rpc('ingest_statement_payload', {
         statement_upload_payload: mapStatementUploadRecord(statementUpload),
@@ -160,8 +272,40 @@ function mapTransactionRecord(transaction) {
   };
 }
 
+function resolveStatementParseStatus(summary) {
+  if (summary.transactionCount === 0) {
+    return 'failed';
+  }
+
+  if (summary.skippedRowCount > 0 || summary.reviewCount > 0) {
+    return 'partial';
+  }
+
+  return 'parsed';
+}
+
 function jsonResponse(status, body) {
   return Response.json(body, { status });
+}
+
+function mergeReviewReason(existingReason, nextReason) {
+  return [...new Set([existingReason, nextReason].filter(Boolean))].join(', ') || null;
+}
+
+function groupBy(rows, keySelector) {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const key = keySelector(row);
+
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+
+    groups.get(key).push(row);
+  }
+
+  return groups;
 }
 
 async function notifyAlert(notify, context, scheduleBackgroundTask) {

@@ -153,6 +153,63 @@ test('handleWhatsAppIngestRequest creates a review-required transaction for low-
   assert.equal(captured.updates[0].parseStatus, 'needs_review');
 });
 
+test('handleWhatsAppIngestRequest keeps alias conflicts in review even when fallback classification succeeds', async () => {
+  const captured = {
+    classificationEvents: [],
+    notifications: [],
+    transactions: [],
+    updates: [],
+  };
+  const request = new Request('http://localhost/functions/v1/whatsapp-ingest', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer internal-secret',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: 730,
+      confidence: 0.93,
+      currency: 'INR',
+      householdId,
+      merchantNormalized: 'amazon',
+      merchantRaw: 'Amazon',
+      messageId,
+      note: 'charger',
+      ownerMemberId,
+      ownerScope: 'member',
+      parseStatus: 'parsed',
+      participantId,
+      providerMessageId: 'wamid.message-4',
+      reviewReasons: [],
+      transactionDate: '2026-03-27',
+      validationErrors: [],
+    }),
+  });
+
+  const response = await handleWhatsAppIngestRequest(request, {
+    internalAuthToken: 'internal-secret',
+    repository: createRepositoryStub(captured, {
+      classifyParsedTransaction: async () => ({
+        categoryId: 'category-shopping',
+        confidence: 0.88,
+        method: 'rules',
+        rationale: 'merchant_keyword_match',
+        reviewReason: 'merchant_alias_conflict',
+      }),
+    }),
+  });
+
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.data.outcome, 'needs_review');
+  assert.equal(captured.transactions[0].status, 'needs_review');
+  assert.match(captured.transactions[0].reviewReason ?? '', /merchant_alias_conflict/);
+  assert.equal(captured.classificationEvents[0].method, 'rules');
+  assert.equal(captured.updates[0].parseStatus, 'needs_review');
+});
+
 test('handleWhatsAppIngestRequest records parse failures without creating a transaction', async () => {
   const captured = {
     classificationEvents: [],

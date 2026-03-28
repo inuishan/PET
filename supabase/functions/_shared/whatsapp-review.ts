@@ -1,4 +1,5 @@
 import { createSupabaseWhatsAppIngestRepository } from './whatsapp-review-repository.ts';
+import { normalizeMerchantName } from './merchant-normalization.mjs';
 import { normalizeAcknowledgementResult } from './whatsapp-reply.ts';
 import type {
   ParsedWhatsAppExpense,
@@ -127,6 +128,7 @@ export async function handleWhatsAppIngestRequest(
     const classification = await dependencies.repository.classifyParsedTransaction(input);
     const reviewReasons = uniqueValues([
       ...input.reviewReasons,
+      ...(classification.reviewReason ? [classification.reviewReason] : []),
       ...(input.confidence < AUTO_POST_CONFIDENCE_THRESHOLD ? ['low_confidence'] : []),
       ...(input.ownerScope === 'unknown' ? ['owner_unknown'] : []),
     ]);
@@ -135,7 +137,7 @@ export async function handleWhatsAppIngestRequest(
       amount: input.amount,
       categoryId: classification.categoryId,
       classificationMethod: classification.method,
-      confidence: input.confidence,
+      confidence: classification.confidence ?? input.confidence,
       currency: input.currency ?? 'INR',
       description: input.note,
       fingerprint: createMessageFingerprint(input.householdId, input.providerMessageId),
@@ -144,6 +146,8 @@ export async function handleWhatsAppIngestRequest(
       merchantRaw: input.merchantRaw ?? 'Unknown Merchant',
       metadata: {
         messageId: input.messageId,
+        classificationRationale: classification.rationale,
+        classificationSource: classification.method === 'inherited' ? 'household_memory' : 'fallback_classifier',
         normalizationSource: 'whatsapp_parse',
         participantId: input.participantId,
         providerMessageId: input.providerMessageId,
@@ -176,7 +180,7 @@ export async function handleWhatsAppIngestRequest(
     });
 
     if (needsReview) {
-      await notifyReviewRequired(input, transaction.id, dependencies.repository);
+      await notifyReviewRequired(input, reviewReasons, transaction.id, dependencies.repository);
     }
 
     const outcome = needsReview ? 'needs_review' : 'posted';
@@ -252,6 +256,7 @@ export function createHttpWhatsAppReplyDispatcher(options: HttpDispatcherOptions
 
 async function notifyReviewRequired(
   input: ParsedWhatsAppExpense,
+  reviewReasons: string[],
   transactionId: string,
   repository: WhatsAppIngestRepository,
 ) {
@@ -266,7 +271,7 @@ async function notifyReviewRequired(
       payload: {
         messageId: input.messageId,
         providerMessageId: input.providerMessageId,
-        reviewReasons: input.reviewReasons,
+        reviewReasons,
       },
       recipientUserId: recipient.userId,
       relatedTransactionId: transactionId,
@@ -386,10 +391,6 @@ function mergeMetadata(
 
 function createMessageFingerprint(householdId: string, providerMessageId: string) {
   return `whatsapp-upi:${householdId}:${providerMessageId}`;
-}
-
-function normalizeMerchantName(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/gi, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function uniqueValues(values: string[]) {

@@ -116,6 +116,118 @@ test('handleStatementIngestRequest persists statement metadata and normalized ro
   assert.equal(captured.reviewQueueAlerts[0].relatedStatementUploadId, 'upload-123');
 });
 
+test('handleStatementIngestRequest applies shared household memory before persisting rows', async () => {
+  const captured = {
+    statementUpload: null,
+    transactions: null,
+  };
+  const request = new Request('http://localhost/functions/v1/statement-ingest', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-statement-pipeline-secret': 'super-secret',
+    },
+    body: JSON.stringify({
+      ...payload,
+      rows: [
+        {
+          merchant: 'Zepto',
+          description: 'Vegetables',
+          amount: '420.00',
+          transactionDate: '2026-04-12',
+          confidence: 0.91,
+        },
+      ],
+    }),
+  });
+
+  const response = await handleStatementIngestRequest(request, {
+    webhookSecret: 'super-secret',
+    repository: {
+      async classifyTransactions(statementUpload, transactions) {
+        assert.equal(statementUpload.householdId, payload.statement.householdId);
+        return transactions.map((transaction) => ({
+          ...transaction,
+          categoryId: 'category-groceries',
+          classificationMethod: 'inherited',
+          confidence: 1,
+          metadata: {
+            ...transaction.metadata,
+            classificationSource: 'merchant_alias',
+          },
+        }));
+      },
+      async ingestStatement(statementUpload, transactions) {
+        captured.statementUpload = statementUpload;
+        captured.transactions = transactions;
+        return { id: 'upload-123' };
+      },
+    },
+  });
+
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(captured.transactions[0].categoryId, 'category-groceries');
+  assert.equal(captured.transactions[0].classificationMethod, 'inherited');
+  assert.equal(captured.transactions[0].metadata.classificationSource, 'merchant_alias');
+});
+
+test('handleStatementIngestRequest downgrades statement status when household memory marks a row for review', async () => {
+  const captured = {
+    statementUpload: null,
+    transactions: null,
+  };
+  const request = new Request('http://localhost/functions/v1/statement-ingest', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-statement-pipeline-secret': 'super-secret',
+    },
+    body: JSON.stringify({
+      ...payload,
+      rows: [
+        {
+          merchant: 'Amazon',
+          description: 'Adapter',
+          amount: '799.00',
+          transactionDate: '2026-04-12',
+          confidence: 0.91,
+        },
+      ],
+    }),
+  });
+
+  const response = await handleStatementIngestRequest(request, {
+    webhookSecret: 'super-secret',
+    repository: {
+      async classifyTransactions(statementUpload, transactions) {
+        return transactions.map((transaction) => ({
+          ...transaction,
+          needsReview: true,
+          reviewReason: 'merchant_alias_conflict',
+          status: 'needs_review',
+        }));
+      },
+      async ingestStatement(statementUpload, transactions) {
+        captured.statementUpload = statementUpload;
+        captured.transactions = transactions;
+        return { id: 'upload-123' };
+      },
+    },
+  });
+
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.data.parseStatus, 'partial');
+  assert.equal(captured.statementUpload.parseStatus, 'partial');
+  assert.equal(captured.statementUpload.rawMetadata.parserSummary.needsReviewCount, 1);
+  assert.equal(captured.transactions[0].reviewReason, 'merchant_alias_conflict');
+});
+
 test('handleStatementIngestRequest surfaces repository errors without leaking internals', async () => {
   const syncBlockedAlerts = [];
   const request = new Request('http://localhost/functions/v1/statement-ingest', {

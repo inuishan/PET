@@ -1,3 +1,4 @@
+import { normalizeMerchantName } from './merchant-normalization.mjs';
 import type {
   HouseholdMember,
   ParseExpenseMessageInput,
@@ -405,10 +406,6 @@ function normalizeOptionalString(value: unknown) {
 
   const normalized = String(value).trim();
   return normalized.length > 0 ? normalized : null;
-}
-
-function normalizeMerchantName(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/gi, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function toAmount(value: string) {
