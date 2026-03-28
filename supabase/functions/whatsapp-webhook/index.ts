@@ -8,6 +8,7 @@ import {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const internalAuthToken = Deno.env.get('WHATSAPP_INTERNAL_AUTH_TOKEN') ?? '';
 const verifyToken = Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ?? '';
 const appSecret = Deno.env.get('META_APP_SECRET') ?? '';
 const parseFunctionUrl =
@@ -27,8 +28,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
 });
 const repository = createSupabaseWhatsAppRepository(supabase);
 const parseDispatcher = createHttpWhatsAppParseDispatcher({
+  authToken: internalAuthToken,
   fetch,
-  serviceRoleKey: supabaseServiceRoleKey,
   timeoutMs: parseTimeoutMs,
   url: parseFunctionUrl,
 });

@@ -70,6 +70,7 @@ test('handleWhatsAppReplyRequest sends a review-needed acknowledgement inside th
   assert.equal(response.status, 200);
   assert.equal(body.success, true);
   assert.equal(body.data.status, 'sent');
+  assert.equal(body.data.messageId, null);
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].contextMessageId, 'wamid.message-1');
   assert.equal(sentMessages[0].phoneNumberId, 'phone-number-id');

@@ -314,6 +314,15 @@ export function createPhase2WhatsAppHarness(options = {}) {
       message.transaction_id = update.transactionId;
       message.updated_at = nowIso;
     },
+
+    async updateMessageAcknowledgement(update) {
+      const message = requireMessage(state, update.householdId, update.messageId);
+      message.parse_metadata = {
+        ...(message.parse_metadata ?? {}),
+        acknowledgement: { ...update.acknowledgement },
+      };
+      message.updated_at = nowIso;
+    },
   };
 
   const replyClient = {
@@ -411,6 +420,8 @@ export function createPhase2WhatsAppHarness(options = {}) {
                 if (!replyResponse.ok || body.success === false) {
                   throw new Error(`Reply dispatch failed with ${replyResponse.status}`);
                 }
+
+                return body.data;
               },
             },
             scheduleBackgroundTask(task) {

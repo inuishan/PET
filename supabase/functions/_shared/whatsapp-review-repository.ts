@@ -182,6 +182,37 @@ export function createSupabaseWhatsAppIngestRepository(supabase: {
         throw new Error(`Failed to update WhatsApp message outcome: ${error.message}`);
       }
     },
+
+    async updateMessageAcknowledgement(update) {
+      const messageResult = await supabase
+        .from('whatsapp_messages')
+        .select('parse_metadata')
+        .eq('id', update.messageId)
+        .eq('household_id', update.householdId)
+        .maybeSingle();
+
+      if (messageResult.error) {
+        throw new Error(
+          `Failed to load WhatsApp acknowledgement metadata: ${messageResult.error.message}`,
+        );
+      }
+
+      const nextMetadata = {
+        ...(asRecord(messageResult.data?.parse_metadata) ?? {}),
+        acknowledgement: update.acknowledgement,
+      };
+      const { error } = await supabase
+        .from('whatsapp_messages')
+        .update({
+          parse_metadata: nextMetadata,
+        })
+        .eq('id', update.messageId)
+        .eq('household_id', update.householdId);
+
+      if (error) {
+        throw new Error(`Failed to update WhatsApp acknowledgement status: ${error.message}`);
+      }
+    },
   };
 }
 
@@ -246,4 +277,12 @@ function isDuplicateError(error: { code?: string | null; message?: string | null
   }
 
   return error.code === '23505' || /duplicate|unique/i.test(error.message ?? '');
+}
+
+function asRecord(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
 }

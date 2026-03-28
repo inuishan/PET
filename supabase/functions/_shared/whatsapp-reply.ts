@@ -1,4 +1,7 @@
-import type { WhatsAppReplyDispatchInput } from './whatsapp-types.ts';
+import type {
+  WhatsAppAcknowledgementResult,
+  WhatsAppReplyDispatchInput,
+} from './whatsapp-types.ts';
 
 const DEFAULT_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -89,7 +92,7 @@ export async function handleWhatsAppReplyRequest(
   }
 
   try {
-    await dependencies.replyClient.sendMessage({
+    const sentReply = await dependencies.replyClient.sendMessage({
       contextMessageId: input.providerMessageId,
       phoneNumberId: input.phoneNumberId,
       recipientPhoneE164: input.recipientPhoneE164,
@@ -99,6 +102,7 @@ export async function handleWhatsAppReplyRequest(
     return jsonResponse(200, {
       success: true,
       data: {
+        messageId: sentReply?.messageId ?? null,
         outcome: input.outcome,
         status: 'sent',
       },
@@ -215,6 +219,20 @@ async function readJsonResponse(response: Response) {
   }
 }
 
+export function normalizeAcknowledgementResult(
+  input: unknown,
+  fallbackOutcome: WhatsAppReplyDispatchInput['outcome'],
+): WhatsAppAcknowledgementResult {
+  const record = asRecord(input ?? {}, 'WhatsApp acknowledgement result must be an object.');
+
+  return {
+    messageId: normalizeOptionalString(record.messageId),
+    outcome: normalizeOutcome(record.outcome ?? fallbackOutcome),
+    reason: normalizeOptionalString(record.reason),
+    status: normalizeAcknowledgementStatus(record.status),
+  };
+}
+
 function normalizeReplyDispatchInput(input: unknown): WhatsAppReplyDispatchInput {
   const record = asRecord(input, 'WhatsApp reply payload must be an object.');
 
@@ -235,6 +253,21 @@ function normalizeOutcome(value: unknown) {
 
   if (normalized !== 'failed' && normalized !== 'needs_review' && normalized !== 'posted') {
     throw new Error('Invalid outcome');
+  }
+
+  return normalized;
+}
+
+function normalizeAcknowledgementStatus(value: unknown) {
+  const normalized = requireString(value, 'status');
+
+  if (
+    normalized !== 'disabled'
+    && normalized !== 'failed'
+    && normalized !== 'sent'
+    && normalized !== 'skipped'
+  ) {
+    throw new Error('Invalid acknowledgement status');
   }
 
   return normalized;
