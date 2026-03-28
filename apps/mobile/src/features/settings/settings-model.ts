@@ -129,6 +129,29 @@ const notificationPreferenceCatalog: NotificationPreferenceCatalogEntry[] = [
   },
 ];
 
+export function buildSettingsNotificationPreferences(
+  persistedNotificationPreferences: PersistedNotificationPreference[] = []
+): SettingsNotificationPreference[] {
+  const persistedPreferenceLookup = new Map(
+    persistedNotificationPreferences.map((preference) => [
+      createNotificationPreferenceLookupKey(preference.notificationType, preference.channel),
+      preference.enabled,
+    ])
+  );
+
+  return notificationPreferenceCatalog.map((preference) => ({
+    channel: preference.channel,
+    description: preference.description,
+    enabled:
+      persistedPreferenceLookup.get(
+        createNotificationPreferenceLookupKey(preference.notificationType, preference.channel)
+      ) ?? preference.defaultEnabled,
+    id: preference.id,
+    label: preference.label,
+    notificationType: preference.notificationType,
+  }));
+}
+
 export function buildSettingsSnapshot(summary: SettingsSummary, options: {
   asOf?: string;
   householdMembers?: SettingsHouseholdMember[];
@@ -137,12 +160,6 @@ export function buildSettingsSnapshot(summary: SettingsSummary, options: {
   whatsappSource?: WhatsAppSourceHealthSnapshot;
 } = {}): SettingsSnapshot {
   const asOf = options.asOf ?? new Date().toISOString();
-  const persistedPreferenceLookup = new Map(
-    (options.persistedNotificationPreferences ?? []).map((preference) => [
-      createNotificationPreferenceLookupKey(preference.notificationType, preference.channel),
-      preference.enabled,
-    ])
-  );
 
   return {
     categories: [...summary.categories]
@@ -163,17 +180,9 @@ export function buildSettingsSnapshot(summary: SettingsSummary, options: {
     householdMembers: [...(options.householdMembers ?? [])].sort((left, right) =>
       left.displayName.localeCompare(right.displayName)
     ),
-    notificationPreferences: notificationPreferenceCatalog.map((preference) => ({
-      channel: preference.channel,
-      description: preference.description,
-      enabled:
-        persistedPreferenceLookup.get(
-          createNotificationPreferenceLookupKey(preference.notificationType, preference.channel)
-        ) ?? preference.defaultEnabled,
-      id: preference.id,
-      label: preference.label,
-      notificationType: preference.notificationType,
-    })),
+    notificationPreferences: buildSettingsNotificationPreferences(
+      options.persistedNotificationPreferences ?? []
+    ),
     parserProfiles: [...summary.parserProfiles].sort((left, right) => {
       const statusRankDifference = profileStatusRank[left.status] - profileStatusRank[right.status];
 

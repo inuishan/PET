@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from '@/features/auth/auth-session';
+import { Phase1PushRegistrationBoundary } from '@/features/notifications/push-registration-boundary';
 import { createAppQueryClient } from '@/lib/query-client';
 
 export function AppProviders({ children }: PropsWithChildren) {
@@ -12,9 +13,12 @@ export function AppProviders({ children }: PropsWithChildren) {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <Phase1PushRegistrationBoundary />
+            {children}
+          </AuthProvider>
+        </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

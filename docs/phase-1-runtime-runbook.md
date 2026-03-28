@@ -18,10 +18,11 @@ The repo treats them as the single source of truth for the Phase 1 runtime contr
 
 Set:
 
+- `EXPO_PUBLIC_PHASE1_ALERT_PUSH_TOPIC_PREFIX`
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 
-These are the only mobile env vars currently required by the checked-in app code.
+The checked-in mobile client uses the topic prefix to compute the same per-user, per-notification FCM topics that the Phase 1 alert transport publishes to.
 
 ### Supabase functions
 
@@ -250,5 +251,5 @@ The failure drill creates a visible notification artifact for the target househo
 
 ## Operational limits
 
-- The checked-in mobile app exposes notification preferences in settings, but the repo does not yet include device-side push registration or topic subscription wiring. FCM transport can be configured server-side now, but end-device delivery still needs mobile implementation work.
+- The checked-in mobile app now syncs device-side topic subscriptions from the saved notification preferences, but it still requires a native mobile build with the notification libraries installed and Firebase/APNs credentials configured for the target project before live push delivery can be validated.
 - The routing contract depends on file-name patterns. If statement naming is inconsistent across banks, add rules deliberately and keep them under source control rather than editing the imported workflow by hand.

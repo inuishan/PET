@@ -20,6 +20,7 @@ test('Phase 1 example env files define a coherent runtime configuration', () => 
 
   assert.deepEqual(report.errors, []);
   assert.equal(report.config.mobile.supabaseUrl.toString(), 'https://project-ref.supabase.co/');
+  assert.equal(report.config.mobile.phase1AlertPushTopicPrefix, 'phase1-user');
   assert.equal(report.config.n8n.routingRules.length, 1);
   assert.equal(report.config.n8n.routingRules[0].parserProfileName, 'hdfc-regalia-gold');
   assert.equal(report.config.supabase.alertChannels[0], 'push');

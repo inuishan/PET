@@ -9,6 +9,14 @@ export function buildPushTopicForUser(userId, prefix = DEFAULT_PUSH_TOPIC_PREFIX
   return `${prefix}-${userId}`;
 }
 
+export function buildPushTopicForNotification(
+  userId,
+  notificationType,
+  prefix = DEFAULT_PUSH_TOPIC_PREFIX,
+) {
+  return `${prefix}-${notificationType}-${userId}`;
+}
+
 export function parseAlertChannels(value) {
   const normalizedChannels = String(value ?? '')
     .split(',')
@@ -122,7 +130,11 @@ export function createPhase1AlertService(dependencies) {
           finalizationRequired: false,
           provider: 'fcm',
           status: 'queued',
-          topic: buildPushTopicForUser(recipient.userId, pushTopicPrefix),
+          topic: buildPushTopicForNotification(
+            recipient.userId,
+            event.notificationType,
+            pushTopicPrefix,
+          ),
         },
       },
       recipientUserId: recipient.userId,

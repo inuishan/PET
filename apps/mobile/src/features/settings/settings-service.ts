@@ -1,8 +1,10 @@
 import {
+  buildSettingsNotificationPreferences,
   buildSettingsSnapshot,
   type PersistedNotificationPreference,
   type SettingsApprovedParticipant,
   type SettingsHouseholdMember,
+  type SettingsNotificationPreference,
   type SettingsNotificationType,
   type SettingsSnapshot,
   type SettingsSummary,
@@ -73,6 +75,30 @@ export function createSettingsQueryKey(householdId: string | null, userId: strin
   return ['settings', householdId, userId] as const;
 }
 
+export function createNotificationPreferencesQueryKey(householdId: string | null, userId: string | null) {
+  return ['notification-preferences', householdId, userId] as const;
+}
+
+export async function loadNotificationPreferences(
+  client: SettingsClient,
+  input: {
+    householdId: string;
+    userId: string;
+  }
+): Promise<SettingsNotificationPreference[]> {
+  const householdId = readRequiredString(input.householdId, 'householdId');
+  const userId = readRequiredString(input.userId, 'userId');
+  const response = await createNotificationPreferencesQuery(client, householdId, userId);
+
+  if (response.error) {
+    throw new Error(`Unable to load notification preferences: ${response.error.message}`);
+  }
+
+  return buildSettingsNotificationPreferences(
+    readArray(response.data).map((row) => readPersistedNotificationPreferenceRow(row))
+  );
+}
+
 export async function loadSettingsSnapshot(
   client: SettingsClient,
   input: {
@@ -89,11 +115,7 @@ export async function loadSettingsSnapshot(
     client.rpc<unknown>('get_household_settings_summary', {
       target_household_id: householdId,
     }),
-    client
-      .from('notification_preferences')
-      .select('notification_type, channel, enabled')
-      .eq('household_id', householdId)
-      .eq('user_id', userId),
+    createNotificationPreferencesQuery(client, householdId, userId),
     client
       .from('household_members')
       .select('id, display_name')
@@ -158,6 +180,14 @@ export async function loadSettingsSnapshot(
       asOf
     ),
   });
+}
+
+function createNotificationPreferencesQuery(client: SettingsClient, householdId: string, userId: string) {
+  return client
+    .from('notification_preferences')
+    .select('notification_type, channel, enabled')
+    .eq('household_id', householdId)
+    .eq('user_id', userId);
 }
 
 export async function saveNotificationPreference(

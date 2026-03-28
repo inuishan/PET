@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  buildPushTopicForUser,
+  buildPushTopicForNotification,
   createPhase1AlertService,
   parseAlertChannels,
 } from '../../supabase/functions/_shared/phase-1-alerts.mjs';
@@ -72,8 +72,9 @@ test('createPhase1AlertService persists and sends review-queue alerts to each ho
   assert.equal(createdNotifications[0].payload.reviewCount, 2);
   assert.equal(createdNotifications[0].payload.delivery.attemptCount, 0);
   assert.equal(createdNotifications[0].payload.delivery.finalizationRequired, false);
-  assert.equal(createdNotifications[0].payload.delivery.topic, buildPushTopicForUser(
+  assert.equal(createdNotifications[0].payload.delivery.topic, buildPushTopicForNotification(
     '22222222-2222-4222-8222-222222222222',
+    'review_queue_escalation',
   ));
   assert.equal(pushCalls.length, 2);
   assert.equal(updatedNotifications.length, 4);
