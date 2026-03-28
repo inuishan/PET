@@ -32,10 +32,23 @@ export type ParsedWhatsAppExpense = {
   ownerScope: 'member' | 'shared' | 'unknown';
   parseStatus: 'failed' | 'needs_review' | 'parsed';
   participantId: string;
+  participantPhoneE164: string | null;
   providerMessageId: string;
+  providerSentAt: string | null;
   reviewReasons: string[];
   transactionDate: string;
   validationErrors: string[];
+};
+
+export type WhatsAppReplyDispatchInput = {
+  amount: number | null;
+  currency: 'INR';
+  merchantRaw: string | null;
+  outcome: 'failed' | 'needs_review' | 'posted';
+  phoneNumberId: string;
+  providerMessageId: string;
+  providerSentAt: string | null;
+  recipientPhoneE164: string;
 };
 
 export type ParseExpenseMessageInput = {

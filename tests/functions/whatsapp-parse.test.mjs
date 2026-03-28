@@ -188,4 +188,6 @@ test('handleWhatsAppParseRequest loads the message and dispatches the normalized
   assert.equal(dispatches[0].merchantRaw, 'Zepto');
   assert.equal(dispatches[0].ownerMemberId, senderMemberId);
   assert.equal(dispatches[0].messageId, messageId);
+  assert.equal(dispatches[0].participantPhoneE164, '+919999888877');
+  assert.equal(dispatches[0].providerSentAt, '2026-03-27T08:45:00.000Z');
 });
