@@ -10,6 +10,7 @@ const phase3Tests = [
   'tests/unit/phase-3f-screen-fallbacks.test.mjs',
   'tests/integration/phase-3-analytics-read-model.test.mjs',
   'tests/integration/phase-3-runtime-config.test.mjs',
+  'tests/integration/phase-3-runtime-runbook.test.mjs',
   'tests/integration/phase-3c-dashboard-ui-state.test.mjs',
   'tests/integration/phase-3d-analytics-ui-state.test.mjs',
   'tests/integration/phase-3d-transactions-drilldown.test.mjs',

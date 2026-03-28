@@ -9,7 +9,7 @@ Copy and edit these example files on the target machine:
 - `apps/mobile/.env.phase3.example`
 - `supabase/.env.functions.phase3.example`
 
-These files define the checked-in runtime contract for the mobile client, the `analytics-generate` function, and the live validation script.
+These files define the checked-in runtime contract for the mobile client, the `analytics-generate` function, and the live validation script. Keep the deployed secrets aligned with those checked-in examples so local validation and hosted behavior stay in sync.
 
 ## Required runtime contract
 
@@ -19,6 +19,8 @@ Set:
 
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+
+These are the only mobile env vars required by the current Phase 3 code. They are public client settings. Do not put `SUPABASE_SERVICE_ROLE_KEY` or `PHASE3_VALIDATION_READ_ACCESS_TOKEN` in the mobile env file.
 
 ### Supabase functions
 
@@ -34,10 +36,35 @@ Optional but recommended:
 
 If `PHASE3_VALIDATION_READ_ACCESS_TOKEN` is set, the live validation script reads analytics through the authenticated backend path by pairing that token with `EXPO_PUBLIC_SUPABASE_ANON_KEY`. If it is omitted, the script falls back to `SUPABASE_SERVICE_ROLE_KEY` and warns about the weaker read-path check.
 
-Deploy the analytics function with those secrets available to the runtime:
+`ANALYTICS_GENERATE_URL` is not part of the normal Phase 3 contract. The checked-in validator and live validation runner derive the function endpoint from `SUPABASE_URL` and require the standard `/functions/v1/analytics-generate` path.
+
+## Request contract
+
+The deployed function contract is:
+
+- method: `POST`
+- path: `/functions/v1/analytics-generate`
+- auth header: `x-analytics-pipeline-secret`
+- content type: `application/json`
+
+Request body:
+
+- `householdId` required
+- `startOn` required
+- `endOn` required
+- `bucket` optional, defaults to `month`
+- `reportType` optional, defaults to `monthly`
+- `comparisonStartOn` optional
+- `comparisonEndOn` optional
+
+The function rejects requests without the shared-secret header and persists both generated `insights` rows and one published `analytics_reports` row from the same signal bundle.
+
+## Deployment
+
+Apply the Phase 3 database migrations first:
 
 ```bash
-supabase functions deploy analytics-generate
+supabase db push
 ```
 
 If you manage secrets through the Supabase CLI, keep the same values as the local example file:
@@ -50,11 +77,34 @@ supabase secrets set \
   PHASE3_VALIDATION_READ_ACCESS_TOKEN=...
 ```
 
-Apply the database migrations before validation:
+Deploy the analytics function with those secrets available to the runtime:
 
 ```bash
-supabase db push
+supabase functions deploy analytics-generate
 ```
+
+After deployment, verify the function boundary directly before you rely on the higher-level validation scripts:
+
+```bash
+curl -i \
+  -X POST \
+  "https://project-ref.supabase.co/functions/v1/analytics-generate" \
+  -H "content-type: application/json" \
+  -H "x-analytics-pipeline-secret: replace-with-analytics-pipeline-shared-secret" \
+  -d '{
+    "householdId": "11111111-1111-4111-8111-111111111111",
+    "startOn": "2026-03-01",
+    "endOn": "2026-03-31",
+    "bucket": "month",
+    "reportType": "monthly"
+  }'
+```
+
+Expected outcomes:
+
+- `200` with `success: true` when the household has usable ledger data and the secret matches
+- `401` when the `x-analytics-pipeline-secret` value is missing or wrong
+- `502` when the function is deployed but generation or persistence fails downstream
 
 ## Validation
 
@@ -117,9 +167,10 @@ What live mode executes:
 2. Apply Supabase migrations.
 3. Deploy `analytics-generate`.
 4. Run `npm run phase-3:validate-runtime`.
-5. Run `npm run phase-3:validate-live -- --mode mock ...`.
-6. Run `npm run phase-3:validate-live -- --mode live ...`.
-7. Open the app against the same household and confirm the dashboard, Analytics tab, and deep-report route match the generated output.
+5. Verify the direct function boundary with `curl` and the shared-secret header.
+6. Run `npm run phase-3:validate-live -- --mode mock ...`.
+7. Run `npm run phase-3:validate-live -- --mode live ...`.
+8. Open the app against the same household and confirm the dashboard, Analytics tab, and deep-report route match the generated output.
 
 ## Expected success signals
 
