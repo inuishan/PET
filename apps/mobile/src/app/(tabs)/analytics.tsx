@@ -58,6 +58,19 @@ export default function AnalyticsScreen() {
     });
   }
 
+  function openReport(reportId: string | null) {
+    if (!reportId) {
+      return;
+    }
+
+    router.push({
+      params: {
+        reportId,
+      },
+      pathname: '/analytics-report',
+    });
+  }
+
   if (analyticsQuery.isPending) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -236,14 +249,18 @@ export default function AnalyticsScreen() {
         ))}
       </View>
 
-      <View style={styles.deepAnalysisCard}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={!screenState.deepAnalysis.reportId}
+        onPress={() => openReport(screenState.deepAnalysis.reportId)}
+        style={styles.deepAnalysisCard}>
         <Text style={styles.deepAnalysisEyebrow}>Deep Analysis</Text>
         <Text style={styles.deepAnalysisTitle}>{screenState.deepAnalysis.title}</Text>
         <Text style={styles.deepAnalysisBody}>
           Use the published report as the top-level narrative, then drill down into the matching transactions from the sections above.
         </Text>
         <Text style={styles.deepAnalysisCta}>{screenState.deepAnalysis.ctaLabel}</Text>
-      </View>
+      </Pressable>
     </ScrollView>
   );
 }

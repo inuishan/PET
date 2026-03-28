@@ -1,3 +1,5 @@
+import { createAnalyticsPeriodWindow } from '@/features/analytics/analytics-model';
+import { loadAnalyticsSnapshot } from '@/features/analytics/analytics-service';
 import { formatRelativeDuration } from '@/features/core-product/core-product-formatting';
 import { buildWhatsAppSourceHealthSnapshot } from '@/features/core-product/whatsapp-source-health';
 import type { SyncStatus } from '@/features/core-product/core-product-state';
@@ -123,6 +125,21 @@ export async function loadDashboardSnapshot(
     throw new Error(`Unable to load WhatsApp source health: ${messagesResponse.error.message}`);
   }
 
+  const monthlyPeriod = createAnalyticsPeriodWindow('month', asOf);
+  let analytics: DashboardSnapshot['analytics'] = null;
+
+  try {
+    analytics = await loadAnalyticsSnapshot(client, {
+      bucket: monthlyPeriod.bucket,
+      comparisonEndOn: monthlyPeriod.comparisonEndOn,
+      comparisonStartOn: monthlyPeriod.comparisonStartOn,
+      endOn: monthlyPeriod.endOn,
+      householdId,
+      startOn: monthlyPeriod.startOn,
+    });
+  } catch {
+    analytics = null;
+  }
   const summary = readDashboardSummaryPayload(summaryResponse.data);
   const whatsappSource = buildWhatsAppSourceHealthSnapshot(
     {
@@ -138,6 +155,7 @@ export async function loadDashboardSnapshot(
 
   return {
     alerts: buildDashboardAlerts(summary.syncStatus, summary.totals.reviewCount),
+    analytics,
     recentTransactions: readArray(recentTransactionsResponse.data).map((row) =>
       mapRecentTransaction(readRecentTransactionRow(row))
     ),
