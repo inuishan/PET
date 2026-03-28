@@ -1,12 +1,19 @@
 {
   "name": "expense-tracking",
   "private": true,
+  "overrides": {
+    "expo-splash-screen": "~55.0.12"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
     "mobile:android": "npm --prefix apps/mobile run android",
+    "mobile:debug:bundle": "node ./scripts/mobile/debug-android.mjs bundle-release",
+    "mobile:debug:doctor": "node ./scripts/mobile/debug-android.mjs doctor",
+    "mobile:debug:relaunch": "node ./scripts/mobile/debug-android.mjs relaunch",
+    "mobile:install:android": "node ./scripts/mobile/install-android.mjs",
     "mobile:start": "npm --prefix apps/mobile run start",
     "mobile:test": "npm --prefix apps/mobile run test",
     "mobile:test:coverage": "npm --prefix apps/mobile run test:coverage",
