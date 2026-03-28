@@ -13,6 +13,8 @@
     "mobile:lint": "npm --prefix apps/mobile run lint",
     "phase-1:smoke": "node ./scripts/phase-1/run-smoke-test.mjs",
     "phase-1:validate-runtime": "node ./scripts/phase-1/validate-runtime-config.mjs",
+    "phase-3:validate-runtime": "node ./scripts/phase-3/validate-runtime-config.mjs",
+    "phase-3:validate-live": "node --experimental-strip-types --loader ./tests/support/mobile-loader.mjs ./scripts/phase-3/run-live-validation.mjs",
     "test:phase-3": "node ./scripts/phase-3/run-verification.mjs",
     "test:phase-1": "node --experimental-strip-types --loader ./tests/support/mobile-loader.mjs --test $(find tests -type f \\( -name '*.test.js' -o -name '*.test.mjs' \\))"
   }
