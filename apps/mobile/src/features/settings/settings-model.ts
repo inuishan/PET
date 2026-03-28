@@ -1,4 +1,5 @@
 import { formatRelativeDuration } from '@/features/core-product/core-product-formatting';
+import type { WhatsAppSourceHealthSnapshot } from '@/features/core-product/whatsapp-source-health';
 import type { NotificationPreference, ParserProfile, ParserProfileStatus, SyncStatus } from '@/features/core-product/core-product-state';
 
 export type SettingsNotificationType =
@@ -42,6 +43,20 @@ export type SettingsNotificationPreference = NotificationPreference & {
   notificationType: SettingsNotificationType;
 };
 
+export type SettingsHouseholdMember = {
+  displayName: string;
+  id: string;
+};
+
+export type SettingsApprovedParticipant = {
+  approvedAt: string;
+  displayName: string;
+  id: string;
+  memberDisplayName: string | null;
+  memberId: string | null;
+  phoneE164: string;
+};
+
 export type SettingsSnapshot = {
   categories: Array<{
     id: string;
@@ -50,6 +65,7 @@ export type SettingsSnapshot = {
     totalAmount: number;
     transactionCount: number;
   }>;
+  householdMembers: SettingsHouseholdMember[];
   notificationPreferences: SettingsNotificationPreference[];
   parserProfiles: SettingsParserProfileSummary[];
   syncHealth: {
@@ -60,6 +76,15 @@ export type SettingsSnapshot = {
     pendingStatementCount: number;
     status: SyncStatus;
   };
+  whatsappParticipants: Array<{
+    approvedAtLabel: string;
+    displayName: string;
+    id: string;
+    memberDisplayName: string | null;
+    memberId: string | null;
+    phoneE164: string;
+  }>;
+  whatsappSource: WhatsAppSourceHealthSnapshot;
 };
 
 type NotificationPreferenceCatalogEntry = {
@@ -106,7 +131,10 @@ const notificationPreferenceCatalog: NotificationPreferenceCatalogEntry[] = [
 
 export function buildSettingsSnapshot(summary: SettingsSummary, options: {
   asOf?: string;
+  householdMembers?: SettingsHouseholdMember[];
   persistedNotificationPreferences?: PersistedNotificationPreference[];
+  whatsappParticipants?: SettingsApprovedParticipant[];
+  whatsappSource?: WhatsAppSourceHealthSnapshot;
 } = {}): SettingsSnapshot {
   const asOf = options.asOf ?? new Date().toISOString();
   const persistedPreferenceLookup = new Map(
@@ -132,6 +160,9 @@ export function buildSettingsSnapshot(summary: SettingsSummary, options: {
 
         return left.name.localeCompare(right.name);
       }),
+    householdMembers: [...(options.householdMembers ?? [])].sort((left, right) =>
+      left.displayName.localeCompare(right.displayName)
+    ),
     notificationPreferences: notificationPreferenceCatalog.map((preference) => ({
       channel: preference.channel,
       description: preference.description,
@@ -159,6 +190,26 @@ export function buildSettingsSnapshot(summary: SettingsSummary, options: {
       lastSuccessfulSyncLabel: formatSyncSuccess(summary.syncStatus.lastSuccessfulSyncAt, asOf),
       pendingStatementCount: summary.syncStatus.pendingStatementCount,
       status: getSettingsSyncStatus(summary.syncStatus),
+    },
+    whatsappParticipants: [...(options.whatsappParticipants ?? [])]
+      .sort((left, right) => new Date(right.approvedAt).getTime() - new Date(left.approvedAt).getTime())
+      .map((participant) => ({
+        approvedAtLabel: formatRelativeDuration(participant.approvedAt, asOf),
+        displayName: participant.displayName,
+        id: participant.id,
+        memberDisplayName: participant.memberDisplayName,
+        memberId: participant.memberId,
+        phoneE164: participant.phoneE164,
+      })),
+    whatsappSource: options.whatsappSource ?? {
+      acknowledgementStatusLabel: 'Disabled until replies are configured',
+      approvedParticipantCount: 0,
+      failedCaptureCount: 0,
+      healthBody: 'Approve at least one household participant before the Meta test number can ingest UPI expenses.',
+      lastCaptureLabel: 'No approved participant traffic yet',
+      reviewCaptureCount: 0,
+      setupLabel: 'No approved participants',
+      status: 'needs_setup',
     },
   };
 }

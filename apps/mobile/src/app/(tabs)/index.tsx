@@ -28,6 +28,12 @@ export default function DashboardScreen() {
     dashboardSnapshot !== null &&
     dashboardSnapshot.totals.transactionCount === 0 &&
     dashboardSnapshot.recentTransactions.length === 0;
+  const sourceHealthStatus = dashboardSnapshot
+    ? getOverallSourceHealthStatus(
+        dashboardSnapshot.sources.statements.status,
+        dashboardSnapshot.sources.whatsapp.status
+      )
+    : 'healthy';
 
   if (dashboardQuery.isPending) {
     return (
@@ -36,7 +42,7 @@ export default function DashboardScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Loading dashboard</Text>
-          <Text style={styles.cardBody}>Pulling month-to-date totals, sync health, and recent transactions.</Text>
+          <Text style={styles.cardBody}>Pulling month-to-date totals, source health, and recent transactions.</Text>
         </View>
       </ScrollView>
     );
@@ -84,9 +90,9 @@ export default function DashboardScreen() {
 
       <View style={styles.card}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Sync freshness</Text>
+          <Text style={styles.sectionTitle}>Source health</Text>
           <View style={styles.syncPill}>
-            <Text style={styles.syncPillText}>{dashboardSnapshot.sync.status}</Text>
+            <Text style={styles.syncPillText}>{sourceHealthStatus}</Text>
           </View>
         </View>
         <Text style={styles.syncValue}>{dashboardSnapshot.sync.freshnessLabel}</Text>
@@ -97,6 +103,22 @@ export default function DashboardScreen() {
             isEmptyDashboard
           )}
         </Text>
+        <View style={styles.sourceRow}>
+          <View style={styles.sourceCard}>
+            <View style={styles.sourceHeader}>
+              <Text style={styles.sourceTitle}>{dashboardSnapshot.sources.statements.label}</Text>
+              <Text style={styles.sourceBadge}>{dashboardSnapshot.sources.statements.status}</Text>
+            </View>
+            <Text style={styles.sourceBody}>{dashboardSnapshot.sources.statements.detail}</Text>
+          </View>
+          <View style={styles.sourceCard}>
+            <View style={styles.sourceHeader}>
+              <Text style={styles.sourceTitle}>{dashboardSnapshot.sources.whatsapp.label}</Text>
+              <Text style={styles.sourceBadge}>{dashboardSnapshot.sources.whatsapp.status}</Text>
+            </View>
+            <Text style={styles.sourceBody}>{dashboardSnapshot.sources.whatsapp.detail}</Text>
+          </View>
+        </View>
       </View>
 
       {isEmptyDashboard ? (
@@ -130,11 +152,15 @@ export default function DashboardScreen() {
               <View style={styles.transactionMeta}>
                 <Text style={styles.transactionMerchant}>{transaction.merchant}</Text>
                 <Text style={styles.transactionDetail}>
-                  {transaction.categoryName} · {formatShortDate(transaction.postedAt)}
+                  {transaction.sourceLabel} · {transaction.categoryName} · {formatShortDate(transaction.postedAt)}
                 </Text>
+                {transaction.ownerDisplayName ? (
+                  <Text style={styles.transactionOwner}>Owner: {transaction.ownerDisplayName}</Text>
+                ) : null}
               </View>
               <View style={styles.transactionAmountBlock}>
                 <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
+                <Text style={styles.activityBadge}>{transaction.sourceBadge}</Text>
                 {transaction.needsReview ? <Text style={styles.reviewBadge}>Review</Text> : null}
               </View>
             </View>
@@ -176,11 +202,30 @@ function DashboardHero({ children }: { children?: ReactNode }) {
       <Text style={styles.kicker}>Household ledger</Text>
       <Text style={styles.title}>Dashboard</Text>
       <Text style={styles.body}>
-        Track statement health, review risk, and the latest credit-card activity in one place.
+        Track statement health, WhatsApp UPI capture, and the latest shared household activity in one place.
       </Text>
       {children}
     </View>
   );
+}
+
+function getOverallSourceHealthStatus(
+  statementStatus: 'degraded' | 'failing' | 'healthy',
+  whatsappStatus: 'degraded' | 'failing' | 'healthy' | 'needs_setup'
+) {
+  if (statementStatus === 'failing' || whatsappStatus === 'failing') {
+    return 'failing';
+  }
+
+  if (statementStatus === 'degraded' || whatsappStatus === 'degraded') {
+    return 'degraded';
+  }
+
+  if (whatsappStatus === 'needs_setup') {
+    return 'degraded';
+  }
+
+  return 'healthy';
 }
 
 const styles = StyleSheet.create({
@@ -270,6 +315,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  sourceBadge: {
+    color: '#7b6448',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  sourceBody: {
+    color: '#5d5346',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  sourceCard: {
+    backgroundColor: '#f4eadc',
+    borderColor: '#ead5b9',
+    borderRadius: 18,
+    borderWidth: 1,
+    flex: 1,
+    gap: 6,
+    padding: 14,
+  },
+  sourceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  sourceRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  sourceTitle: {
+    color: '#182026',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   retryButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#182026',
@@ -344,6 +422,11 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  transactionOwner: {
+    color: '#8a7559',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   transactionRow: {
     alignItems: 'center',
     backgroundColor: '#fffaf2',
@@ -354,5 +437,11 @@ const styles = StyleSheet.create({
     gap: 16,
     justifyContent: 'space-between',
     padding: 18,
+  },
+  activityBadge: {
+    alignSelf: 'flex-end',
+    color: '#7b6448',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

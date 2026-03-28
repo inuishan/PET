@@ -1,12 +1,14 @@
 import { type ReactNode, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { useAuthSession } from '@/features/auth/auth-session';
 import type { SettingsNotificationType, SettingsSnapshot } from '@/features/settings/settings-model';
 import {
   createSettingsQueryKey,
   loadSettingsSnapshot,
+  revokeApprovedParticipant,
+  saveApprovedParticipant,
   saveNotificationPreference,
 } from '@/features/settings/settings-service';
 import { getSupabaseClient } from '@/lib/supabase';
@@ -16,6 +18,9 @@ const settingsIntro =
 
 export default function SettingsScreen() {
   const { session } = useAuthSession();
+  const [participantDisplayName, setParticipantDisplayName] = useState('');
+  const [participantPhoneE164, setParticipantPhoneE164] = useState('');
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [supabase] = useState(() => getSupabaseClient());
   const queryClient = useQueryClient();
   const householdId =
@@ -104,6 +109,41 @@ export default function SettingsScreen() {
       await queryClient.invalidateQueries({ queryKey: settingsQueryKey });
     },
   });
+  const saveApprovedParticipantMutation = useMutation({
+    mutationFn: async () => {
+      if (!householdId) {
+        throw new Error('A ready household is required to approve participants.');
+      }
+
+      return saveApprovedParticipant(supabase, {
+        displayName: participantDisplayName,
+        householdId,
+        memberId: selectedMemberId,
+        phoneE164: participantPhoneE164,
+      });
+    },
+    onSuccess: async () => {
+      setParticipantDisplayName('');
+      setParticipantPhoneE164('');
+      setSelectedMemberId(null);
+      await queryClient.invalidateQueries({ queryKey: settingsQueryKey });
+    },
+  });
+  const revokeApprovedParticipantMutation = useMutation({
+    mutationFn: async (phoneE164: string) => {
+      if (!householdId) {
+        throw new Error('A ready household is required to revoke participants.');
+      }
+
+      return revokeApprovedParticipant(supabase, {
+        householdId,
+        phoneE164,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: settingsQueryKey });
+    },
+  });
 
   if (session.status === 'loading' || session.household.status === 'loading') {
     return (
@@ -163,6 +203,7 @@ export default function SettingsScreen() {
   }
 
   const settingsSnapshot = settingsQuery.data;
+  const canManageParticipants = session.household.status === 'ready' && session.household.role === 'owner';
 
   function toggleNotificationPreference(preferenceId: string) {
     const preference = settingsSnapshot.notificationPreferences.find((currentPreference) => currentPreference.id === preferenceId);
@@ -178,9 +219,19 @@ export default function SettingsScreen() {
     });
   }
 
+  function submitParticipantApproval() {
+    if (
+      saveApprovedParticipantMutation.isPending ||
+      participantPhoneE164.trim().length === 0
+    ) {
+      return;
+    }
+
+    saveApprovedParticipantMutation.mutate();
+  }
+
   return (
     <SettingsFrame>
-
       {session.household.status === 'ready' ? (
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Household</Text>
@@ -211,6 +262,35 @@ export default function SettingsScreen() {
         {settingsSnapshot.syncHealth.lastError ? (
           <Text style={styles.errorText}>{settingsSnapshot.syncHealth.lastError}</Text>
         ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.cardLabel}>WhatsApp UPI source</Text>
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>{settingsSnapshot.whatsappSource.status}</Text>
+          </View>
+        </View>
+        <Text style={styles.cardTitle}>{settingsSnapshot.whatsappSource.setupLabel}</Text>
+        <Text style={styles.cardBody}>{settingsSnapshot.whatsappSource.healthBody}</Text>
+        <View style={styles.listRow}>
+          <View style={styles.listMeta}>
+            <Text style={styles.listTitle}>Last approved capture</Text>
+            <Text style={styles.listBody}>{settingsSnapshot.whatsappSource.lastCaptureLabel}</Text>
+          </View>
+          <Text style={styles.totalText}>{settingsSnapshot.whatsappSource.reviewCaptureCount} in review</Text>
+        </View>
+        <View style={styles.listRow}>
+          <View style={styles.listMeta}>
+            <Text style={styles.listTitle}>Acknowledgements</Text>
+            <Text style={styles.listBody}>
+              Optional replies remain off until the Phase 2E runtime path is configured.
+            </Text>
+          </View>
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>{settingsSnapshot.whatsappSource.acknowledgementStatusLabel}</Text>
+          </View>
+        </View>
       </View>
 
       <View style={styles.card}>
@@ -251,6 +331,91 @@ export default function SettingsScreen() {
         ) : (
           <Text style={styles.cardBody}>Category rollups will appear once transactions have been classified for this month.</Text>
         )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Approved participants</Text>
+        {canManageParticipants ? (
+          <View style={styles.formSection}>
+            <TextInput
+              autoCapitalize="words"
+              onChangeText={setParticipantDisplayName}
+              placeholder="Display name"
+              placeholderTextColor="#8c7a65"
+              style={styles.input}
+              value={participantDisplayName}
+            />
+            <TextInput
+              autoCapitalize="none"
+              keyboardType="phone-pad"
+              onChangeText={setParticipantPhoneE164}
+              placeholder="+91..."
+              placeholderTextColor="#8c7a65"
+              style={styles.input}
+              value={participantPhoneE164}
+            />
+            <View style={styles.chipRow}>
+              {settingsSnapshot.householdMembers.map((member) => {
+                const isActive = selectedMemberId === member.id;
+
+                return (
+                  <Pressable
+                    key={member.id}
+                    accessibilityRole="button"
+                    onPress={() => setSelectedMemberId(isActive ? null : member.id)}
+                    style={[styles.memberChip, isActive ? styles.memberChipActive : null]}>
+                    <Text style={[styles.memberChipText, isActive ? styles.memberChipTextActive : null]}>
+                      {member.displayName}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={submitParticipantApproval}
+              style={[
+                styles.primaryButton,
+                saveApprovedParticipantMutation.isPending ? styles.primaryButtonDisabled : null,
+              ]}>
+              <Text style={styles.primaryButtonText}>Approve participant</Text>
+            </Pressable>
+            {saveApprovedParticipantMutation.error instanceof Error ? (
+              <Text style={styles.errorText}>{saveApprovedParticipantMutation.error.message}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={styles.cardBody}>
+            Only the household owner can approve or revoke WhatsApp participants for the Meta test number.
+          </Text>
+        )}
+        {settingsSnapshot.whatsappParticipants.length > 0 ? (
+          settingsSnapshot.whatsappParticipants.map((participant) => (
+            <View key={participant.id} style={styles.listRow}>
+              <View style={styles.listMeta}>
+                <Text style={styles.listTitle}>{participant.displayName}</Text>
+                <Text style={styles.listBody}>
+                  {participant.phoneE164}
+                  {participant.memberDisplayName ? ` · ${participant.memberDisplayName}` : ''}
+                  {` · approved ${participant.approvedAtLabel}`}
+                </Text>
+              </View>
+              {canManageParticipants ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => revokeApprovedParticipantMutation.mutate(participant.phoneE164)}
+                  style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Revoke</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ))
+        ) : (
+          <Text style={styles.cardBody}>No approved WhatsApp participants have been added yet.</Text>
+        )}
+        {revokeApprovedParticipantMutation.error instanceof Error ? (
+          <Text style={styles.errorText}>{revokeApprovedParticipantMutation.error.message}</Text>
+        ) : null}
       </View>
 
       <View style={styles.card}>
@@ -370,11 +535,29 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 36,
   },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
   errorText: {
     color: '#8f3d1f',
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 20,
+  },
+  formSection: {
+    gap: 10,
+  },
+  input: {
+    backgroundColor: '#f4eadc',
+    borderColor: '#e3ccb0',
+    borderRadius: 16,
+    borderWidth: 1,
+    color: '#182026',
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   inviteCodePill: {
     alignSelf: 'flex-start',
@@ -394,6 +577,26 @@ const styles = StyleSheet.create({
     color: '#7b6448',
     fontSize: 13,
     lineHeight: 20,
+  },
+  memberChip: {
+    backgroundColor: '#f4eadc',
+    borderColor: '#e3ccb0',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  memberChipActive: {
+    backgroundColor: '#182026',
+    borderColor: '#182026',
+  },
+  memberChipText: {
+    color: '#7b6448',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  memberChipTextActive: {
+    color: '#fffaf2',
   },
   listMeta: {
     flex: 1,
@@ -425,6 +628,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'capitalize',
   },
+  primaryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#182026',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    color: '#fffaf2',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   retryButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#182026',
@@ -446,6 +664,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  secondaryButton: {
+    borderColor: '#d8c2a5',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  secondaryButtonText: {
+    color: '#7b6448',
+    fontSize: 13,
+    fontWeight: '700',
   },
   title: {
     color: '#182026',

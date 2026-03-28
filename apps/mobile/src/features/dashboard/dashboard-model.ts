@@ -2,6 +2,7 @@ import {
   type CoreProductState,
   getCategoryById,
   type SyncStatus,
+  type WhatsAppSourceStatus,
 } from '@/features/core-product/core-product-state';
 import { formatRelativeDuration } from '@/features/core-product/core-product-formatting';
 
@@ -20,8 +21,23 @@ export type DashboardSnapshot = {
     id: string;
     merchant: string;
     needsReview: boolean;
+    ownerDisplayName: string | null;
     postedAt: string;
+    sourceBadge: 'Card' | 'UPI';
+    sourceLabel: string;
   }>;
+  sources: {
+    statements: {
+      detail: string;
+      label: 'Statements';
+      status: SyncStatus;
+    };
+    whatsapp: {
+      detail: string;
+      label: 'WhatsApp UPI';
+      status: WhatsAppSourceStatus;
+    };
+  };
   sync: {
     freshnessLabel: string;
     pendingStatementCount: number;
@@ -74,8 +90,23 @@ export function createDashboardSnapshot(state: CoreProductState, asOf: string = 
       id: transaction.id,
       merchant: transaction.merchant,
       needsReview: transaction.needsReview,
+      ownerDisplayName: transaction.ownerDisplayName,
       postedAt: transaction.postedAt,
+      sourceBadge: transaction.sourceType === 'upi_whatsapp' ? 'UPI' : 'Card',
+      sourceLabel: transaction.sourceLabel,
     })),
+    sources: {
+      statements: {
+        detail: getStatementSourceDetail(state),
+        label: 'Statements',
+        status: state.sync.status,
+      },
+      whatsapp: {
+        detail: getWhatsAppSourceDetail(state),
+        label: 'WhatsApp UPI',
+        status: state.whatsappSource.status,
+      },
+    },
     sync: {
       freshnessLabel: `Updated ${formatRelativeDuration(state.sync.lastSuccessfulSyncAt, asOf)}`,
       pendingStatementCount: state.sync.pendingStatementCount,
@@ -89,4 +120,34 @@ export function createDashboardSnapshot(state: CoreProductState, asOf: string = 
       transactionCount: state.transactions.length,
     },
   };
+}
+
+function getStatementSourceDetail(state: CoreProductState) {
+  if (state.sync.status === 'failing') {
+    return state.sync.lastError ?? 'At least one statement sync failed.';
+  }
+
+  if (state.sync.pendingStatementCount > 0) {
+    return `${state.sync.pendingStatementCount} statement ${state.sync.pendingStatementCount === 1 ? 'is' : 'are'} waiting for parser recovery.`;
+  }
+
+  return 'The statement pipeline is clear for this household.';
+}
+
+function getWhatsAppSourceDetail(state: CoreProductState) {
+  if (state.whatsappSource.status === 'needs_setup') {
+    return 'Approve at least one participant before the Meta test number is ready.';
+  }
+
+  if (state.whatsappSource.failedCaptureCount > 0) {
+    return `${state.whatsappSource.failedCaptureCount} WhatsApp capture${state.whatsappSource.failedCaptureCount === 1 ? '' : 's'} failed recently.`;
+  }
+
+  if (state.whatsappSource.reviewCaptureCount > 0) {
+    return `${state.whatsappSource.reviewCaptureCount} WhatsApp capture${state.whatsappSource.reviewCaptureCount === 1 ? '' : 's'} need${state.whatsappSource.reviewCaptureCount === 1 ? 's' : ''} review.`;
+  }
+
+  return state.whatsappSource.lastCaptureAt
+    ? `Last approved capture landed ${formatRelativeDuration(state.whatsappSource.lastCaptureAt, state.asOf)}.`
+    : 'Ready for the first approved WhatsApp message.';
 }

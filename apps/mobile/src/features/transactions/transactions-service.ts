@@ -3,6 +3,7 @@ import {
   type CoreCategory,
   type CoreProductState,
   type LedgerTransaction,
+  type LedgerSourceType,
 } from '@/features/core-product/core-product-state';
 
 type ErrorLike = {
@@ -35,6 +36,7 @@ type StatementUploadRow = {
 
 type TransactionMetadata = {
   cardName?: string | null;
+  reviewReasons?: unknown;
   statementLabel?: string | null;
 };
 
@@ -46,8 +48,12 @@ type TransactionRow = {
   merchant_raw: string;
   metadata: TransactionMetadata | null;
   needs_review: boolean;
+  owner_member?: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
+  owner_scope: 'member' | 'shared' | 'unknown';
   posted_at?: string | null;
   review_reason?: string | null;
+  source_reference?: string | null;
+  source_type: LedgerSourceType;
   statement_uploads?: StatementUploadRow | StatementUploadRow[] | null;
   transaction_date: string;
 };
@@ -97,7 +103,7 @@ export async function loadTransactionsSnapshot(
     client
       .from('transactions')
       .select(
-        'id, category_id, merchant_raw, amount, transaction_date, posted_at, needs_review, review_reason, confidence, metadata, statement_uploads(card_name, bank_name, billing_period_end)'
+        'id, category_id, merchant_raw, amount, transaction_date, posted_at, needs_review, review_reason, confidence, metadata, source_type, source_reference, owner_scope, owner_member:household_members(display_name), statement_uploads(card_name, bank_name, billing_period_end)'
       )
       .eq('household_id', householdId)
       .order('transaction_date', { ascending: false })
@@ -167,22 +173,39 @@ function mapCategoryTone(colorToken: string | null | undefined): CategoryTone {
 function mapTransactionRow(transaction: TransactionRow, uncategorizedCategoryId: string | undefined): LedgerTransaction {
   const statementUpload = normalizeStatementUpload(transaction.statement_uploads);
   const metadata = transaction.metadata ?? {};
+  const isUpiTransaction = transaction.source_type === 'upi_whatsapp';
 
   return {
     amount: transaction.amount,
-    cardLabel: normalizeLabel(metadata.cardName, statementUpload?.card_name, 'Statement import'),
+    cardLabel: isUpiTransaction ? 'WhatsApp UPI' : normalizeLabel(metadata.cardName, statementUpload?.card_name, 'Statement import'),
     categoryId: transaction.category_id ?? requireUncategorizedCategoryId(uncategorizedCategoryId),
     confidence: transaction.confidence ?? 0,
     id: transaction.id,
     merchant: transaction.merchant_raw,
     needsReview: transaction.needs_review,
+    ownerDisplayName: readOwnerDisplayName(transaction.owner_member),
+    ownerScope: transaction.owner_scope,
     postedAt: normalizeIsoDate(transaction.posted_at ?? transaction.transaction_date),
     reviewReason: transaction.review_reason ?? null,
-    statementLabel: normalizeLabel(
-      metadata.statementLabel,
-      formatStatementLabel(statementUpload, transaction.transaction_date),
-      'Statement import'
-    ),
+    reviewReasons: readReviewReasons(metadata.reviewReasons),
+    sourceContextLabel: isUpiTransaction
+      ? 'Meta test number'
+      : normalizeLabel(
+        metadata.statementLabel,
+        formatStatementLabel(statementUpload, transaction.transaction_date),
+        'Statement import'
+      ),
+    sourceLabel: isUpiTransaction
+      ? 'WhatsApp UPI'
+      : normalizeLabel(metadata.cardName, statementUpload?.card_name, 'Statement import'),
+    sourceType: transaction.source_type,
+    statementLabel: isUpiTransaction
+      ? 'Meta test number'
+      : normalizeLabel(
+        metadata.statementLabel,
+        formatStatementLabel(statementUpload, transaction.transaction_date),
+        'Statement import'
+      ),
   };
 }
 
@@ -252,8 +275,12 @@ function readTransactionRow(input: unknown): TransactionRow {
     merchant_raw: readRequiredString(record.merchant_raw, 'merchant_raw'),
     metadata: readTransactionMetadata(record.metadata),
     needs_review: readBoolean(record.needs_review, 'needs_review'),
+    owner_member: readOwnerMember(record.owner_member),
+    owner_scope: readOwnerScope(record.owner_scope, 'owner_scope'),
     posted_at: readOptionalString(record.posted_at),
     review_reason: readOptionalString(record.review_reason),
+    source_reference: readOptionalString(record.source_reference),
+    source_type: readSourceType(record.source_type, 'source_type'),
     statement_uploads: readStatementUploads(record.statement_uploads),
     transaction_date: readRequiredString(record.transaction_date, 'transaction_date'),
   };
@@ -268,8 +295,63 @@ function readTransactionMetadata(input: unknown): TransactionMetadata | null {
 
   return {
     cardName: readOptionalString(record.cardName),
+    reviewReasons: record.reviewReasons,
     statementLabel: readOptionalString(record.statementLabel),
   };
+}
+
+function readOwnerDisplayName(input: TransactionRow['owner_member']) {
+  if (Array.isArray(input)) {
+    return readOwnerDisplayName(input[0] ?? null);
+  }
+
+  return input?.display_name?.trim() || null;
+}
+
+function readOwnerMember(input: unknown): TransactionRow['owner_member'] {
+  if (input === null || input === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(input)) {
+    return input.map((member) => {
+      const record = readRecord(member);
+
+      return {
+        display_name: readNullableString(record.display_name, 'display_name'),
+      };
+    });
+  }
+
+  const record = readRecord(input);
+
+  return {
+    display_name: readNullableString(record.display_name, 'display_name'),
+  };
+}
+
+function readOwnerScope(input: unknown, field: string): TransactionRow['owner_scope'] {
+  if (input === 'member' || input === 'shared' || input === 'unknown') {
+    return input;
+  }
+
+  throw new Error(`Expected ${field} to be a supported owner scope.`);
+}
+
+function readReviewReasons(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function readSourceType(input: unknown, field: string): LedgerSourceType {
+  if (input === 'credit_card_statement' || input === 'upi_whatsapp') {
+    return input;
+  }
+
+  throw new Error(`Expected ${field} to be a supported transaction source.`);
 }
 
 function readStatementUploads(input: unknown): TransactionRow['statement_uploads'] {

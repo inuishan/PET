@@ -1,4 +1,5 @@
 import { formatRelativeDuration } from '@/features/core-product/core-product-formatting';
+import { buildWhatsAppSourceHealthSnapshot } from '@/features/core-product/whatsapp-source-health';
 import type { SyncStatus } from '@/features/core-product/core-product-state';
 
 import type { DashboardAlert, DashboardSnapshot } from './dashboard-model';
@@ -12,6 +13,7 @@ type SelectQuery<T> = Promise<{
   error: ErrorLike;
 }> & {
   eq: (column: string, value: string) => SelectQuery<T>;
+  is: (column: string, value: null) => SelectQuery<T>;
   limit: (count: number) => SelectQuery<T>;
   order: (column: string, options?: { ascending?: boolean }) => SelectQuery<T>;
 };
@@ -42,14 +44,25 @@ type RecentTransactionRow = {
   amount: number;
   categories: { name?: string | null } | Array<{ name?: string | null }> | null;
   id: string;
+  metadata: {
+    cardName?: string | null;
+  } | null;
   merchant_raw: string;
   needs_review: boolean;
+  owner_member: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
   posted_at: string | null;
+  statement_uploads: { card_name?: string | null } | Array<{ card_name?: string | null }> | null;
+  source_type: 'credit_card_statement' | 'upi_whatsapp';
   transaction_date: string;
 };
 
+type WhatsAppMessageHealthRow = {
+  parse_status: string;
+  received_at: string;
+};
+
 export type DashboardClient = {
-  from: (table: 'transactions') => {
+  from: (table: 'transactions' | 'whatsapp_messages' | 'whatsapp_participants') => {
     select: (columns: string) => SelectQuery<unknown>;
   };
   rpc: <T>(fn: string, args?: Record<string, unknown>) => Promise<{
@@ -70,17 +83,28 @@ export async function loadDashboardSnapshot(
   } = {}
 ): Promise<DashboardSnapshot> {
   const asOf = options.asOf ?? new Date().toISOString();
-  const [summaryResponse, recentTransactionsResponse] = await Promise.all([
+  const [summaryResponse, recentTransactionsResponse, participantsResponse, messagesResponse] = await Promise.all([
     client.rpc<unknown>('get_household_dashboard_summary', {
       target_household_id: householdId,
     }),
     client
       .from('transactions')
-      .select('id, amount, merchant_raw, needs_review, posted_at, transaction_date, categories(name)')
+      .select('id, amount, merchant_raw, needs_review, posted_at, transaction_date, source_type, metadata, statement_uploads(card_name), categories(name), owner_member:household_members(display_name)')
       .eq('household_id', householdId)
       .order('transaction_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(4),
+    client
+      .from('whatsapp_participants')
+      .select('id')
+      .eq('household_id', householdId)
+      .is('revoked_at', null),
+    client
+      .from('whatsapp_messages')
+      .select('parse_status, received_at')
+      .eq('household_id', householdId)
+      .order('received_at', { ascending: false })
+      .limit(20),
   ]);
 
   if (summaryResponse.error) {
@@ -91,17 +115,48 @@ export async function loadDashboardSnapshot(
     throw new Error(`Unable to load recent transactions: ${recentTransactionsResponse.error.message}`);
   }
 
+  if (participantsResponse.error) {
+    throw new Error(`Unable to load WhatsApp participants: ${participantsResponse.error.message}`);
+  }
+
+  if (messagesResponse.error) {
+    throw new Error(`Unable to load WhatsApp source health: ${messagesResponse.error.message}`);
+  }
+
   const summary = readDashboardSummaryPayload(summaryResponse.data);
+  const whatsappSource = buildWhatsAppSourceHealthSnapshot(
+    {
+      approvedParticipantCount: readArray(participantsResponse.data).length,
+      messages: readArray(messagesResponse.data).map((row) => readWhatsAppMessageHealthRow(row)).map((message) => ({
+        parseStatus: message.parse_status,
+        receivedAt: message.received_at,
+      })),
+    },
+    asOf
+  );
+  const syncStatus = getDashboardSyncStatus(summary.syncStatus);
 
   return {
     alerts: buildDashboardAlerts(summary.syncStatus, summary.totals.reviewCount),
     recentTransactions: readArray(recentTransactionsResponse.data).map((row) =>
       mapRecentTransaction(readRecentTransactionRow(row))
     ),
+    sources: {
+      statements: {
+        detail: getSyncAlertMessage(summary.syncStatus, summary.totals.transactionCount === 0),
+        label: 'Statements',
+        status: syncStatus,
+      },
+      whatsapp: {
+        detail: describeWhatsAppDashboardSource(whatsappSource),
+        label: 'WhatsApp UPI',
+        status: whatsappSource.status,
+      },
+    },
     sync: {
       freshnessLabel: formatDashboardFreshness(summary.syncStatus.lastSuccessfulSyncAt, summary.syncStatus.lastStatementUploadAt, asOf),
       pendingStatementCount: summary.syncStatus.pendingStatementCount,
-      status: getDashboardSyncStatus(summary.syncStatus),
+      status: syncStatus,
     },
     totals: {
       monthToDateSpend: summary.totals.totalSpend,
@@ -141,7 +196,7 @@ function buildDashboardAlerts(
   return alerts;
 }
 
-function getSyncAlertMessage(syncStatus: DashboardSummaryPayload['syncStatus']) {
+function getSyncAlertMessage(syncStatus: DashboardSummaryPayload['syncStatus'], isEmptyDashboard: boolean = false) {
   if (syncStatus.failedStatementCount > 0 || syncStatus.latestParseStatus === 'failed') {
     return `${syncStatus.failedStatementCount || 1} statement sync ${syncStatus.failedStatementCount === 1 ? 'has' : 'have'} failed.`;
   }
@@ -154,7 +209,11 @@ function getSyncAlertMessage(syncStatus: DashboardSummaryPayload['syncStatus']) 
     return `${syncStatus.needsReviewStatementCount} synced statement ${syncStatus.needsReviewStatementCount === 1 ? 'still needs' : 'still need'} review.`;
   }
 
-  return 'The ingestion pipeline has pending statements to reconcile.';
+  if (isEmptyDashboard) {
+    return 'No statements have landed for this household yet.';
+  }
+
+  return 'The statement pipeline is clear for this household.';
 }
 
 function formatDashboardFreshness(
@@ -198,7 +257,10 @@ function mapRecentTransaction(transaction: RecentTransactionRow): DashboardSnaps
     id: transaction.id,
     merchant: transaction.merchant_raw,
     needsReview: transaction.needs_review,
+    ownerDisplayName: readOwnerDisplayName(transaction.owner_member),
     postedAt: normalizeIsoDate(transaction.posted_at ?? transaction.transaction_date),
+    sourceBadge: transaction.source_type === 'upi_whatsapp' ? 'UPI' : 'Card',
+    sourceLabel: readRecentTransactionSourceLabel(transaction),
   };
 }
 
@@ -235,10 +297,97 @@ function readRecentTransactionRow(input: unknown): RecentTransactionRow {
     amount: readNumber(record.amount, 'amount'),
     categories: readCategories(record.categories),
     id: readRequiredString(record.id, 'id'),
+    metadata: readRecentTransactionMetadata(record.metadata),
     merchant_raw: readRequiredString(record.merchant_raw, 'merchant_raw'),
     needs_review: readBoolean(record.needs_review, 'needs_review'),
+    owner_member: readOwnerMember(record.owner_member),
     posted_at: readNullableString(record.posted_at, 'posted_at'),
+    statement_uploads: readRecentStatementUploads(record.statement_uploads),
+    source_type: readSourceType(record.source_type, 'source_type'),
     transaction_date: readRequiredString(record.transaction_date, 'transaction_date'),
+  };
+}
+
+function readOwnerDisplayName(
+  input: RecentTransactionRow['owner_member']
+): DashboardSnapshot['recentTransactions'][number]['ownerDisplayName'] {
+  if (Array.isArray(input)) {
+    return readOwnerDisplayName(input[0] ?? null);
+  }
+
+  return input?.display_name?.trim() || null;
+}
+
+function readOwnerMember(input: unknown): RecentTransactionRow['owner_member'] {
+  if (input === null || input === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(input)) {
+    return input.map((member) => {
+      const record = readRecord(member);
+
+      return {
+        display_name: readNullableString(record.display_name, 'display_name'),
+      };
+    });
+  }
+
+  const record = readRecord(input);
+
+  return {
+    display_name: readNullableString(record.display_name, 'display_name'),
+  };
+}
+
+function readSourceType(input: unknown, field: string): RecentTransactionRow['source_type'] {
+  if (input === 'credit_card_statement' || input === 'upi_whatsapp') {
+    return input;
+  }
+
+  throw new Error(`Expected ${field} to be a supported transaction source.`);
+}
+
+function readWhatsAppMessageHealthRow(input: unknown): WhatsAppMessageHealthRow {
+  const record = readRecord(input);
+
+  return {
+    parse_status: readRequiredString(record.parse_status, 'parse_status'),
+    received_at: readRequiredString(record.received_at, 'received_at'),
+  };
+}
+
+function readRecentStatementUploads(input: unknown): RecentTransactionRow['statement_uploads'] {
+  if (input === null || input === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(input)) {
+    return input.map((statementUpload) => {
+      const record = readRecord(statementUpload);
+
+      return {
+        card_name: readNullableString(record.card_name, 'card_name'),
+      };
+    });
+  }
+
+  const record = readRecord(input);
+
+  return {
+    card_name: readNullableString(record.card_name, 'card_name'),
+  };
+}
+
+function readRecentTransactionMetadata(input: unknown): RecentTransactionRow['metadata'] {
+  if (input === null || input === undefined) {
+    return null;
+  }
+
+  const record = readRecord(input);
+
+  return {
+    cardName: readNullableString(record.cardName, 'cardName'),
   };
 }
 
@@ -274,6 +423,43 @@ function readCategoryName(input: RecentTransactionRow['categories']) {
 
 function normalizeIsoDate(dateValue: string) {
   return `${dateValue}T08:00:00.000Z`;
+}
+
+function describeWhatsAppDashboardSource(
+  source: ReturnType<typeof buildWhatsAppSourceHealthSnapshot>
+) {
+  if (source.status === 'needs_setup') {
+    return 'Approve at least one participant before the Meta test number is ready.';
+  }
+
+  if (source.reviewCaptureCount > 0) {
+    return `${source.reviewCaptureCount} WhatsApp capture${source.reviewCaptureCount === 1 ? '' : 's'} need${source.reviewCaptureCount === 1 ? 's' : ''} review.`;
+  }
+
+  if (source.failedCaptureCount > 0) {
+    return `${source.failedCaptureCount} WhatsApp capture${source.failedCaptureCount === 1 ? '' : 's'} failed recently.`;
+  }
+
+  return 'Approved participant capture is healthy.';
+}
+
+function readRecentTransactionSourceLabel(transaction: RecentTransactionRow) {
+  if (transaction.source_type === 'upi_whatsapp') {
+    return 'WhatsApp UPI';
+  }
+
+  const metadataCardName = transaction.metadata?.cardName?.trim();
+
+  if (metadataCardName) {
+    return metadataCardName;
+  }
+
+  const statementUpload = Array.isArray(transaction.statement_uploads)
+    ? transaction.statement_uploads[0] ?? null
+    : transaction.statement_uploads;
+  const statementCardName = statementUpload?.card_name?.trim();
+
+  return statementCardName || 'Statement import';
 }
 
 function readArray(input: unknown) {

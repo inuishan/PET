@@ -8,6 +8,7 @@ import {
 function createSelectBuilder<T>(data: T, error: { message: string } | null = null) {
   const builder = {
     eq: vi.fn(() => builder),
+    is: vi.fn(() => builder),
     limit: vi.fn(() => builder),
     order: vi.fn(() => builder),
     then: (onFulfilled: (value: { data: T; error: { message: string } | null }) => unknown) =>
@@ -48,24 +49,60 @@ describe('loadDashboardSnapshot', () => {
           name: 'Subscriptions',
         },
         id: 'transaction-6',
+        metadata: {
+          cardName: 'Amex MRCC',
+        },
         merchant_raw: 'Spotify',
         needs_review: false,
+        owner_member: null,
         posted_at: '2026-03-27',
+        statement_uploads: null,
+        source_type: 'credit_card_statement',
         transaction_date: '2026-03-27',
       },
       {
-        amount: '879.00',
+        amount: '245.00',
         categories: null,
-        id: 'transaction-4',
-        merchant_raw: 'Google One',
+        id: 'transaction-upi-1',
+        metadata: null,
+        merchant_raw: 'Zepto',
         needs_review: true,
+        owner_member: {
+          display_name: 'Ishan',
+        },
         posted_at: null,
+        statement_uploads: null,
+        source_type: 'upi_whatsapp',
         transaction_date: '2026-03-26',
       },
     ]);
+    const participantsBuilder = createSelectBuilder([
+      { id: 'participant-1' },
+      { id: 'participant-2' },
+    ]);
+    const messagesBuilder = createSelectBuilder([
+      {
+        parse_status: 'needs_review',
+        received_at: '2026-03-27T07:55:00.000Z',
+      },
+      {
+        parse_status: 'posted',
+        received_at: '2026-03-27T07:10:00.000Z',
+      },
+    ]);
     const client: DashboardClient = {
-      from: vi.fn(() => ({
-        select: vi.fn(() => recentTransactionsBuilder),
+      from: vi.fn((table) => ({
+        select: vi.fn(() => {
+          if (table === 'transactions') {
+            return recentTransactionsBuilder;
+          }
+
+          if (table === 'whatsapp_participants') {
+            return participantsBuilder;
+          }
+
+          return messagesBuilder;
+        }),
       })),
       rpc,
     };
@@ -97,16 +134,33 @@ describe('loadDashboardSnapshot', () => {
           merchant: 'Spotify',
           needsReview: false,
           postedAt: '2026-03-27T08:00:00.000Z',
+          sourceBadge: 'Card',
+          sourceLabel: 'Amex MRCC',
         },
         {
-          amount: 879,
+          amount: 245,
           categoryName: 'Uncategorized',
-          id: 'transaction-4',
-          merchant: 'Google One',
+          id: 'transaction-upi-1',
+          merchant: 'Zepto',
           needsReview: true,
+          ownerDisplayName: 'Ishan',
           postedAt: '2026-03-26T08:00:00.000Z',
+          sourceBadge: 'UPI',
+          sourceLabel: 'WhatsApp UPI',
         },
       ],
+      sources: {
+        statements: {
+          detail: '1 statement is waiting for parser recovery.',
+          label: 'Statements',
+          status: 'degraded',
+        },
+        whatsapp: {
+          detail: '1 WhatsApp capture needs review.',
+          label: 'WhatsApp UPI',
+          status: 'degraded',
+        },
+      },
       sync: {
         freshnessLabel: 'Updated 1h 50m ago',
         pendingStatementCount: 1,
@@ -128,12 +182,26 @@ describe('loadDashboardSnapshot', () => {
     expect(recentTransactionsBuilder.order).toHaveBeenCalledWith('transaction_date', { ascending: false });
     expect(recentTransactionsBuilder.order).toHaveBeenCalledWith('created_at', { ascending: false });
     expect(recentTransactionsBuilder.limit).toHaveBeenCalledWith(4);
+    expect(participantsBuilder.is).toHaveBeenCalledWith('revoked_at', null);
+    expect(messagesBuilder.limit).toHaveBeenCalledWith(20);
   });
 
   it('returns an explicit empty dashboard snapshot when the household has no transactions yet', async () => {
+    const participantsBuilder = createSelectBuilder([]);
+    const messagesBuilder = createSelectBuilder([]);
     const client: DashboardClient = {
-      from: vi.fn(() => ({
-        select: vi.fn(() => createSelectBuilder([])),
+      from: vi.fn((table) => ({
+        select: vi.fn(() => {
+          if (table === 'transactions') {
+            return createSelectBuilder([]);
+          }
+
+          if (table === 'whatsapp_participants') {
+            return participantsBuilder;
+          }
+
+          return messagesBuilder;
+        }),
       })),
       rpc: vi.fn().mockResolvedValue({
         data: {
@@ -166,6 +234,18 @@ describe('loadDashboardSnapshot', () => {
     ).resolves.toEqual({
       alerts: [],
       recentTransactions: [],
+      sources: {
+        statements: {
+          detail: 'No statements have landed for this household yet.',
+          label: 'Statements',
+          status: 'healthy',
+        },
+        whatsapp: {
+          detail: 'Approve at least one participant before the Meta test number is ready.',
+          label: 'WhatsApp UPI',
+          status: 'needs_setup',
+        },
+      },
       sync: {
         freshnessLabel: 'No statements synced yet',
         pendingStatementCount: 0,
@@ -190,9 +270,15 @@ describe('loadDashboardSnapshot', () => {
               amount: '5400.00',
               categories: [{ name: 'Groceries' }],
               id: 'transaction-5',
+              metadata: {
+                cardName: 'ICICI Amazon Pay',
+              },
               merchant_raw: 'Nature Basket',
               needs_review: false,
+              owner_member: null,
               posted_at: '2026-03-26',
+              statement_uploads: null,
+              source_type: 'credit_card_statement',
               transaction_date: '2026-03-26',
             },
           ])
@@ -231,6 +317,7 @@ describe('loadDashboardSnapshot', () => {
         {
           categoryName: 'Groceries',
           merchant: 'Nature Basket',
+          sourceBadge: 'Card',
         },
       ],
     });

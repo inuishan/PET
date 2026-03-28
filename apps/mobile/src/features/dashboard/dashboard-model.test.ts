@@ -29,4 +29,48 @@ describe('createDashboardSnapshot', () => {
       'txn-003',
     ]);
   });
+
+  it('keeps card and WhatsApp activity in the same dashboard feed with source attribution', () => {
+    const state = createMockCoreProductState();
+    const snapshot = createDashboardSnapshot(
+      {
+        ...state,
+        transactions: [
+          {
+            ...state.transactions[5],
+            id: 'txn-upi-001',
+            merchant: 'Zepto',
+            ownerDisplayName: 'Ishan',
+            ownerScope: 'member',
+            postedAt: '2026-03-27T07:50:00.000Z',
+            reviewReason: 'owner_conflict',
+            reviewReasons: ['owner_conflict'],
+            sourceContextLabel: 'Meta test number',
+            sourceLabel: 'WhatsApp UPI',
+            sourceType: 'upi_whatsapp',
+          },
+          ...state.transactions,
+        ],
+        whatsappSource: {
+          approvedParticipantCount: 2,
+          failedCaptureCount: 0,
+          lastCaptureAt: '2026-03-27T07:50:00.000Z',
+          reviewCaptureCount: 1,
+          status: 'degraded',
+        },
+      },
+      '2026-03-27T08:00:00.000Z'
+    );
+
+    expect(snapshot.recentTransactions[0]).toMatchObject({
+      id: 'txn-upi-001',
+      ownerDisplayName: 'Ishan',
+      sourceBadge: 'UPI',
+      sourceLabel: 'WhatsApp UPI',
+    });
+    expect(snapshot.sources.whatsapp).toMatchObject({
+      detail: '1 WhatsApp capture needs review.',
+      status: 'degraded',
+    });
+  });
 });

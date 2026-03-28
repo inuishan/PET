@@ -150,9 +150,17 @@ export default function TransactionsScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Transactions</Text>
       <Text style={styles.body}>
-        Review the parser output, isolate low-confidence rows, and correct categories before the
-        monthly totals are trusted.
+        Review statement rows and WhatsApp UPI captures together, then correct categories before the
+        shared household totals are trusted.
       </Text>
+
+      <View style={styles.summaryCard}>
+        <Text style={styles.sectionLabel}>Source mix</Text>
+        <Text style={styles.summaryTitle}>Card and WhatsApp UPI activity stay in one ledger.</Text>
+        <Text style={styles.detailBody}>
+          {screenState.sourceSummary.creditCardCount} card rows · {screenState.sourceSummary.upiCount} WhatsApp UPI captures · {screenState.sourceSummary.upiReviewCount} UPI captures still need review.
+        </Text>
+      </View>
 
       <View style={styles.filterRow}>
         {filterOptions.map((option) => {
@@ -178,7 +186,11 @@ export default function TransactionsScreen() {
           <Text style={styles.detailTitle}>{selectedTransaction.merchant}</Text>
           <Text style={styles.detailAmount}>{formatCurrency(selectedTransaction.amount)}</Text>
           <Text style={styles.detailMeta}>
-            {selectedCategory.name} · {formatShortDate(selectedTransaction.postedAt)} · {selectedTransaction.cardLabel}
+            {selectedCategory.name} · {formatShortDate(selectedTransaction.postedAt)} · {selectedTransaction.sourceLabel}
+          </Text>
+          <Text style={styles.detailMeta}>
+            {selectedTransaction.sourceContextLabel}
+            {selectedTransaction.ownerDisplayName ? ` · Owner: ${selectedTransaction.ownerDisplayName}` : ''}
           </Text>
           <Text style={styles.detailBody}>
             {selectedTransaction.reviewReason ?? 'This row is already trusted and included in the household totals.'}
@@ -238,11 +250,15 @@ export default function TransactionsScreen() {
                     <View style={styles.transactionMeta}>
                       <Text style={styles.transactionMerchant}>{transaction.merchant}</Text>
                       <Text style={styles.transactionDetail}>
-                        {transaction.categoryName} · {transaction.statementLabel}
+                        {transaction.sourceLabel} · {transaction.categoryName} · {transaction.sourceContextLabel}
                       </Text>
+                      {transaction.ownerDisplayName ? (
+                        <Text style={styles.transactionOwner}>Owner: {transaction.ownerDisplayName}</Text>
+                      ) : null}
                     </View>
                     <View style={styles.amountMeta}>
                       <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
+                      <Text style={styles.sourceBadge}>{transaction.sourceBadge}</Text>
                       {transaction.needsReview ? <Text style={styles.reviewBadge}>Needs review</Text> : null}
                     </View>
                   </Pressable>
@@ -426,6 +442,11 @@ const styles = StyleSheet.create({
   section: {
     gap: 14,
   },
+  sourceBadge: {
+    color: '#7b6448',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   sectionLabel: {
     color: '#7b6448',
     fontSize: 12,
@@ -436,6 +457,19 @@ const styles = StyleSheet.create({
   title: {
     color: '#182026',
     fontSize: 32,
+    fontWeight: '800',
+  },
+  summaryCard: {
+    backgroundColor: '#fffaf2',
+    borderColor: '#ead5b9',
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: 8,
+    padding: 20,
+  },
+  summaryTitle: {
+    color: '#182026',
+    fontSize: 20,
     fontWeight: '800',
   },
   transactionAmount: {
@@ -455,6 +489,11 @@ const styles = StyleSheet.create({
   transactionMeta: {
     flex: 1,
     gap: 4,
+  },
+  transactionOwner: {
+    color: '#8a7559',
+    fontSize: 12,
+    fontWeight: '600',
   },
   transactionRow: {
     alignItems: 'center',
