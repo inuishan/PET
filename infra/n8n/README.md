@@ -109,13 +109,12 @@ Set these for Supabase edge functions:
 ## Workflow shape
 
 1. `Google Drive Trigger` watches the configured folder.
-2. `Prepare Statement Context` derives `householdId`, `parserProfileName`, `providerFileId`, and `providerFileName`.
-3. `Resolve Statement Routing` maps the Drive file name to `householdId`, `parserProfileName`, optional bank/card labels, and an optional `statementPasswordKey`.
-4. `Download PDF` fetches the file from Drive to local disk or an n8n binary property.
-5. `Extract Statement Text` runs `PDF_TEXT_EXTRACT_COMMAND --password-key <key>` so the local helper resolves the actual secret without storing it in workflow execution data.
-6. `Call statement-parse` posts statement metadata plus extracted text to Supabase. The password key remains local to the extraction/ingest path and is not forwarded to the parser request.
-7. `Retry Ingest` sends the normalized payload to `statement-ingest` with retries and backoff.
-8. `Handle Failure` records sync failure details in the execution log and triggers a visible alert path.
+2. `Resolve Statement Routing` derives `householdId`, `parserProfileName`, `providerFileId`, `providerFileName`, optional bank/card labels, and an optional `statementPasswordKey`.
+3. `Download PDF` fetches the file from Drive to local disk or an n8n binary property.
+4. `Extract Statement Text` runs `PDF_TEXT_EXTRACT_COMMAND --password-key <key>` so the local helper resolves the actual secret without storing it in workflow execution data.
+5. `Call statement-parse` posts statement metadata plus extracted text to Supabase. The password key remains local to the extraction/ingest path and is not forwarded to the parser request.
+6. `Retry Ingest` sends the normalized payload to `statement-ingest` with retries and backoff.
+7. `Handle Failure` records sync failure details in the execution log and triggers a visible alert path.
 
 ## Alert delivery behavior
 
@@ -196,4 +195,5 @@ Set these for Supabase edge functions:
 - The shared secret is required on both endpoints. Do not inline secrets directly into node parameters when n8n credentials or environment variables can hold them.
 - The repo now includes example env files plus validation and smoke-test commands:
   - `npm run phase-1:validate-runtime`
+  - `npm run phase-1:validate-live -- --mode mock`
   - `npm run phase-1:smoke`

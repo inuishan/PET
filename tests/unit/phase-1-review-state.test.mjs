@@ -68,6 +68,7 @@ test('Phase 1 ledger projection preserves review fields from ingested rows', () 
     merchant: 'Google One',
     needsReview: true,
     ownerDisplayName: null,
+    ownerMemberId: null,
     ownerScope: 'unknown',
     postedAt: '2026-04-20T08:00:00.000Z',
     reviewReason: 'The parser could not distinguish between subscriptions and utilities.',
