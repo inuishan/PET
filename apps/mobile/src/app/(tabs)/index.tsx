@@ -1,10 +1,16 @@
-import { type ReactNode, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { formatCurrency, formatShortDate } from '@/features/core-product/core-product-formatting';
 import { useAuthSession } from '@/features/auth/auth-session';
+import { formatCurrency, formatShortDate } from '@/features/core-product/core-product-formatting';
+import {
+  buildDashboardScreenState,
+  type DashboardNavigation,
+} from '@/features/dashboard/dashboard-model';
 import { createDashboardQueryKey, loadDashboardSnapshot } from '@/features/dashboard/dashboard-service';
+import { createTransactionsDrilldownParams } from '@/features/transactions/transactions-drilldown';
 import { getSupabaseClient } from '@/lib/supabase';
 
 export default function DashboardScreen() {
@@ -24,25 +30,55 @@ export default function DashboardScreen() {
     queryKey: createDashboardQueryKey(householdId),
   });
   const dashboardSnapshot = dashboardQuery.data ?? null;
+  const dashboardScreenState = dashboardSnapshot ? buildDashboardScreenState(dashboardSnapshot) : null;
+  const showAnalyticsSection = dashboardSnapshot?.analytics !== null;
   const isEmptyDashboard =
     dashboardSnapshot !== null &&
     dashboardSnapshot.totals.transactionCount === 0 &&
     dashboardSnapshot.recentTransactions.length === 0;
-  const sourceHealthStatus = dashboardSnapshot
-    ? getOverallSourceHealthStatus(
-        dashboardSnapshot.sources.statements.status,
-        dashboardSnapshot.sources.whatsapp.status
-      )
-    : 'healthy';
+
+  function openDashboardNavigation(navigation: DashboardNavigation) {
+    if (navigation.kind === 'analytics') {
+      router.push('/(tabs)/analytics');
+      return;
+    }
+
+    if (navigation.kind === 'analytics-report') {
+      router.push({
+        params: {
+          reportId: navigation.reportId,
+        },
+        pathname: '/analytics-report',
+      });
+      return;
+    }
+
+    router.push({
+      params: createTransactionsDrilldownParams(navigation.drilldown),
+      pathname: '/(tabs)/transactions',
+    });
+  }
+
+  function openSettings() {
+    router.push('/(tabs)/settings');
+  }
+
+  function openTransactions() {
+    router.push('/(tabs)/transactions');
+  }
 
   if (dashboardQuery.isPending) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <DashboardHero />
+        <View style={styles.heroCard}>
+          <Text style={styles.heroEyebrow}>Household ledger</Text>
+          <Text style={styles.heroTitle}>Dashboard</Text>
+          <Text style={styles.heroBody}>Loading trend-aware spend, WhatsApp UPI capture, and AI recommendations.</Text>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Loading dashboard</Text>
-          <Text style={styles.cardBody}>Pulling month-to-date totals, source health, and recent transactions.</Text>
+          <Text style={styles.cardBody}>Pulling trend buckets, AI insights, and the latest household activity.</Text>
         </View>
       </ScrollView>
     );
@@ -51,7 +87,11 @@ export default function DashboardScreen() {
   if (dashboardQuery.isError) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <DashboardHero />
+        <View style={styles.heroCard}>
+          <Text style={styles.heroEyebrow}>Household ledger</Text>
+          <Text style={styles.heroTitle}>Dashboard</Text>
+          <Text style={styles.heroBody}>The dashboard could not assemble its WhatsApp UPI, source health, and analytics context.</Text>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Unable to load dashboard</Text>
@@ -60,79 +100,153 @@ export default function DashboardScreen() {
               ? dashboardQuery.error.message
               : 'The household dashboard could not be loaded.'}
           </Text>
-          <Pressable accessibilityRole="button" onPress={() => void dashboardQuery.refetch()} style={styles.retryButton}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+          <Pressable accessibilityRole="button" onPress={() => void dashboardQuery.refetch()} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Retry</Text>
           </Pressable>
         </View>
       </ScrollView>
     );
   }
 
-  if (!dashboardSnapshot) {
+  if (!dashboardSnapshot || !dashboardScreenState) {
     return null;
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <DashboardHero>
-        <View style={styles.metricsRow}>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>Month to date</Text>
-            <Text style={styles.metricValue}>{formatCurrency(dashboardSnapshot.totals.monthToDateSpend)}</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>Needs review</Text>
-            <Text style={styles.metricValue}>{formatCurrency(dashboardSnapshot.totals.reviewQueueAmount)}</Text>
-            <Text style={styles.metricCaption}>{dashboardSnapshot.totals.reviewQueueCount} rows pending</Text>
-          </View>
+      {!isEmptyDashboard && (dashboardSnapshot.sync.status !== 'healthy' || dashboardSnapshot.alerts.length > 0) ? (
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>
+            {dashboardSnapshot.sync.status !== 'healthy'
+              ? 'Upload your latest statement for accurate tracking.'
+              : dashboardSnapshot.alerts[0]?.title ?? 'Review the latest dashboard alerts.'}
+          </Text>
         </View>
-      </DashboardHero>
+      ) : null}
 
-      <View style={styles.card}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Source health</Text>
-          <View style={styles.syncPill}>
-            <Text style={styles.syncPillText}>{sourceHealthStatus}</Text>
+      <View style={styles.heroCard}>
+        <Text style={styles.heroEyebrow}>Monthly spend</Text>
+        <Text style={styles.heroTitle}>{formatCurrency(dashboardScreenState.hero.currentSpend)}</Text>
+        <Text style={styles.heroPeriod}>{dashboardScreenState.hero.periodLabel}</Text>
+
+        <View style={styles.sparklineRow}>
+          <View style={styles.sparklineTrack}>
+            {dashboardScreenState.hero.sparklinePoints.map((point) => (
+              <View key={point.id} style={styles.sparklineColumn}>
+                <View style={[styles.sparklineBar, { height: `${Math.max(18, point.normalizedHeight * 100)}%` }]} />
+                <Text style={styles.sparklineLabel}>{point.shortLabel}</Text>
+              </View>
+            ))}
+          </View>
+          <View
+            style={[
+              styles.trendBadge,
+              dashboardScreenState.hero.trendDirection === 'down' ? styles.trendBadgeDown : null,
+            ]}>
+            <Text style={styles.trendBadgeText}>{dashboardScreenState.hero.trendBadgeLabel}</Text>
           </View>
         </View>
-        <Text style={styles.syncValue}>{dashboardSnapshot.sync.freshnessLabel}</Text>
-        <Text style={styles.cardBody}>
-          {describeSyncState(
-            dashboardSnapshot.sync.pendingStatementCount,
-            dashboardSnapshot.sync.status,
-            isEmptyDashboard
-          )}
-        </Text>
-        <View style={styles.sourceRow}>
-          <View style={styles.sourceCard}>
-            <View style={styles.sourceHeader}>
-              <Text style={styles.sourceTitle}>{dashboardSnapshot.sources.statements.label}</Text>
-              <Text style={styles.sourceBadge}>{dashboardSnapshot.sources.statements.status}</Text>
-            </View>
-            <Text style={styles.sourceBody}>{dashboardSnapshot.sources.statements.detail}</Text>
+        <Text style={styles.heroBody}>{dashboardScreenState.hero.trendNarrative}</Text>
+
+        <View style={styles.heroMetaRow}>
+          <View style={styles.heroMetaCard}>
+            <Text style={styles.heroMetaLabel}>Needs review</Text>
+            <Text style={styles.heroMetaValue}>{formatCurrency(dashboardSnapshot.totals.reviewQueueAmount)}</Text>
+            <Text style={styles.heroMetaCaption}>{dashboardSnapshot.totals.reviewQueueCount} rows pending</Text>
           </View>
-          <View style={styles.sourceCard}>
-            <View style={styles.sourceHeader}>
-              <Text style={styles.sourceTitle}>{dashboardSnapshot.sources.whatsapp.label}</Text>
-              <Text style={styles.sourceBadge}>{dashboardSnapshot.sources.whatsapp.status}</Text>
-            </View>
-            <Text style={styles.sourceBody}>{dashboardSnapshot.sources.whatsapp.detail}</Text>
+          <View style={styles.heroMetaCard}>
+            <Text style={styles.heroMetaLabel}>Cleared spend</Text>
+            <Text style={styles.heroMetaValue}>{formatCurrency(dashboardSnapshot.totals.reviewedAmount)}</Text>
+            <Text style={styles.heroMetaCaption}>{dashboardSnapshot.sync.freshnessLabel}</Text>
           </View>
         </View>
       </View>
 
-      {isEmptyDashboard ? (
+      <View style={styles.chipRow}>
+        {dashboardScreenState.sourceChips.map((chip) => (
+          <View
+            key={chip.id}
+            style={[
+              styles.sourceChip,
+              chip.tone === 'positive' ? styles.sourceChipPositive : null,
+              chip.tone === 'warning' ? styles.sourceChipWarning : null,
+            ]}>
+            <Text
+              style={[
+                styles.sourceChipText,
+                chip.tone === 'positive' ? styles.sourceChipTextPositive : null,
+              ]}>
+              {chip.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {dashboardScreenState.categoryHighlights.length > 0 ? (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>No dashboard activity yet</Text>
-          <Text style={styles.cardBody}>
-            Upload the first household statement to populate month-to-date totals and recent transactions.
-          </Text>
+          <Text style={styles.sectionTitle}>Spend concentration</Text>
+          {dashboardScreenState.categoryHighlights.map((item) => (
+            <View key={item.categoryName} style={styles.categoryRow}>
+              <View style={styles.categoryRowHeader}>
+                <Text style={styles.categoryTitle}>{item.categoryName}</Text>
+                <Text style={styles.categoryShare}>{item.shareLabel}</Text>
+              </View>
+              <View style={styles.categoryTrack}>
+                <View style={[styles.categoryFill, { width: `${Math.max(8, item.widthRatio * 100)}%` }]} />
+              </View>
+              <View style={styles.categoryRowHeader}>
+                <Text style={styles.categoryDetail}>{item.amountLabel}</Text>
+                <Text style={styles.categoryDetail}>{item.detail}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {showAnalyticsSection ? (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>AI Insights</Text>
+            <Pressable accessibilityRole="button" onPress={() => openDashboardNavigation(dashboardScreenState.deepAnalysis.navigation)}>
+              <Text style={styles.sectionLink}>Open Analytics</Text>
+            </Pressable>
+          </View>
+          {dashboardScreenState.aiInsightCards.map((insight) => (
+            <Pressable
+              key={insight.id}
+              accessibilityRole="button"
+              onPress={() => openDashboardNavigation(insight.navigation)}
+              style={styles.insightCard}>
+              <Text style={styles.insightEyebrow}>{insight.eyebrow}</Text>
+              <Text style={styles.insightTitle}>{insight.title}</Text>
+              <Text style={styles.cardBody}>{insight.summary}</Text>
+              <Text style={styles.insightRecommendation}>{insight.recommendation}</Text>
+              {insight.impactLabel ? <Text style={styles.insightImpact}>{insight.impactLabel}</Text> : null}
+              <Text style={styles.insightEvidence}>{insight.evidenceLabel}</Text>
+              <Text style={styles.insightAction}>{insight.actionLabel}</Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => openDashboardNavigation(dashboardScreenState.deepAnalysis.navigation)}
+            style={styles.deepAnalysisCard}>
+            <Text style={styles.deepAnalysisEyebrow}>Deep Analysis</Text>
+            <Text style={styles.deepAnalysisTitle}>{dashboardScreenState.deepAnalysis.title}</Text>
+            <Text style={styles.deepAnalysisBody}>{dashboardScreenState.deepAnalysis.subtitle}</Text>
+            <Text style={styles.deepAnalysisAction}>{dashboardScreenState.deepAnalysis.actionLabel}</Text>
+          </Pressable>
         </View>
       ) : null}
 
       {dashboardSnapshot.alerts.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Alerts</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Spending Alerts</Text>
+            <View style={styles.alertCountBadge}>
+              <Text style={styles.alertCountBadgeText}>{dashboardSnapshot.alerts.length} Active</Text>
+            </View>
+          </View>
           {dashboardSnapshot.alerts.map((alert) => (
             <View
               key={alert.id}
@@ -144,8 +258,30 @@ export default function DashboardScreen() {
         </View>
       ) : null}
 
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>{dashboardScreenState.statementSync.title}</Text>
+        <Text style={styles.cardBody}>{dashboardScreenState.statementSync.body}</Text>
+        <Pressable accessibilityRole="button" onPress={openSettings} style={styles.primaryButton}>
+          <Text style={styles.primaryButtonText}>{dashboardScreenState.statementSync.actionLabel}</Text>
+        </Pressable>
+      </View>
+
+      {isEmptyDashboard ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>No dashboard activity yet</Text>
+          <Text style={styles.cardBody}>
+            Upload the first household statement to unlock trend lines, AI recommendations, and recent activity.
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent transactions</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <Pressable accessibilityRole="button" onPress={openTransactions}>
+            <Text style={styles.sectionLink}>View all</Text>
+          </Pressable>
+        </View>
         {dashboardSnapshot.recentTransactions.length > 0 ? (
           dashboardSnapshot.recentTransactions.map((transaction) => (
             <View key={transaction.id} style={styles.transactionRow}>
@@ -160,14 +296,13 @@ export default function DashboardScreen() {
               </View>
               <View style={styles.transactionAmountBlock}>
                 <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
-                <Text style={styles.activityBadge}>{transaction.sourceBadge}</Text>
-                {transaction.needsReview ? <Text style={styles.reviewBadge}>Review</Text> : null}
+                <Text style={styles.transactionBadge}>{transaction.sourceBadge}</Text>
+                {transaction.needsReview ? <Text style={styles.reviewBadge}>Needs review</Text> : null}
               </View>
             </View>
           ))
         ) : (
           <View style={styles.card}>
-            <Text style={styles.alertTitle}>No recent transactions</Text>
             <Text style={styles.cardBody}>Recent household activity will appear here after the first sync completes.</Text>
           </View>
         )}
@@ -176,193 +311,246 @@ export default function DashboardScreen() {
   );
 }
 
-function describeSyncState(
-  pendingStatementCount: number,
-  syncStatus: 'degraded' | 'failing' | 'healthy',
-  isEmptyDashboard: boolean
-) {
-  if (syncStatus === 'failing') {
-    return 'At least one statement sync failed and needs attention.';
-  }
-
-  if (pendingStatementCount > 0) {
-    return `${pendingStatementCount} statement ${pendingStatementCount === 1 ? 'is' : 'are'} waiting for parser recovery.`;
-  }
-
-  if (isEmptyDashboard) {
-    return 'No statements have landed for this household yet.';
-  }
-
-  return 'The statement pipeline is clear for this household.';
-}
-
-function DashboardHero({ children }: { children?: ReactNode }) {
-  return (
-    <View style={styles.heroCard}>
-      <Text style={styles.kicker}>Household ledger</Text>
-      <Text style={styles.title}>Dashboard</Text>
-      <Text style={styles.body}>
-        Track statement health, WhatsApp UPI capture, and the latest shared household activity in one place.
-      </Text>
-      {children}
-    </View>
-  );
-}
-
-function getOverallSourceHealthStatus(
-  statementStatus: 'degraded' | 'failing' | 'healthy',
-  whatsappStatus: 'degraded' | 'failing' | 'healthy' | 'needs_setup'
-) {
-  if (statementStatus === 'failing' || whatsappStatus === 'failing') {
-    return 'failing';
-  }
-
-  if (statementStatus === 'degraded' || whatsappStatus === 'degraded') {
-    return 'degraded';
-  }
-
-  if (whatsappStatus === 'needs_setup') {
-    return 'degraded';
-  }
-
-  return 'healthy';
-}
-
 const styles = StyleSheet.create({
   alertCard: {
-    backgroundColor: '#f8ecdc',
-    borderColor: '#ead5b9',
-    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3eb',
+    borderRadius: 28,
     borderWidth: 1,
     gap: 8,
-    padding: 18,
+    padding: 22,
   },
   alertCardCritical: {
-    backgroundColor: '#f7ddd7',
-    borderColor: '#e8b9aa',
+    borderColor: '#f1c1b9',
+    backgroundColor: '#fff4f2',
+  },
+  alertCountBadge: {
+    backgroundColor: '#ffe2dd',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  alertCountBadgeText: {
+    color: '#b03924',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   alertTitle: {
-    color: '#182026',
-    fontSize: 17,
+    color: '#000e24',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  banner: {
+    backgroundColor: '#3a2500',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  bannerText: {
+    color: '#ffd89f',
+    fontSize: 13,
     fontWeight: '700',
   },
-  body: {
-    color: '#5d5346',
-    fontSize: 15,
-    lineHeight: 22,
-  },
   card: {
-    backgroundColor: '#fffaf2',
-    borderColor: '#ead5b9',
-    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3eb',
+    borderRadius: 30,
     borderWidth: 1,
-    gap: 8,
-    padding: 20,
+    gap: 14,
+    padding: 22,
   },
   cardBody: {
-    color: '#5d5346',
+    color: '#596677',
     fontSize: 14,
     lineHeight: 21,
   },
-  content: {
-    backgroundColor: '#f4eadc',
-    gap: 18,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  heroCard: {
-    backgroundColor: '#182026',
-    borderRadius: 28,
-    gap: 14,
-    padding: 24,
-  },
-  kicker: {
-    color: '#d7c5ab',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-  },
-  metricCaption: {
-    color: '#b2c0cf',
+  categoryDetail: {
+    color: '#7a8596',
     fontSize: 12,
     fontWeight: '600',
   },
-  metricCard: {
-    backgroundColor: '#22303a',
-    borderRadius: 20,
+  categoryFill: {
+    backgroundColor: '#68dba9',
+    borderRadius: 999,
+    height: '100%',
+  },
+  categoryRow: {
+    gap: 8,
+  },
+  categoryRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  categoryShare: {
+    color: '#000e24',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  categoryTitle: {
+    color: '#000e24',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  categoryTrack: {
+    backgroundColor: '#ecf0f4',
+    borderRadius: 999,
+    height: 10,
+    overflow: 'hidden',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  content: {
+    backgroundColor: '#f7f9fb',
+    gap: 18,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  deepAnalysisAction: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  deepAnalysisBody: {
+    color: '#c2cde0',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  deepAnalysisCard: {
+    backgroundColor: '#000e24',
+    borderRadius: 28,
+    gap: 10,
+    padding: 22,
+  },
+  deepAnalysisEyebrow: {
+    color: '#85f8c4',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  deepAnalysisTitle: {
+    color: '#ffffff',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  heroBody: {
+    color: '#c2cde0',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  heroCard: {
+    backgroundColor: '#000e24',
+    borderRadius: 36,
+    gap: 10,
+    overflow: 'hidden',
+    padding: 24,
+  },
+  heroEyebrow: {
+    color: '#8ea4c7',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  heroMetaCaption: {
+    color: '#8ea4c7',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  heroMetaCard: {
+    backgroundColor: '#11213e',
+    borderRadius: 22,
     flex: 1,
     gap: 4,
     padding: 16,
   },
-  metricLabel: {
-    color: '#d7c5ab',
-    fontSize: 13,
-    fontWeight: '600',
+  heroMetaLabel: {
+    color: '#8ea4c7',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  metricValue: {
-    color: '#fffaf2',
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  metricsRow: {
+  heroMetaRow: {
     flexDirection: 'row',
     gap: 12,
+    marginTop: 4,
   },
-  reviewBadge: {
-    alignSelf: 'flex-end',
-    color: '#a64b2a',
-    fontSize: 12,
-    fontWeight: '700',
+  heroMetaValue: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '800',
   },
-  sourceBadge: {
-    color: '#7b6448',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-  },
-  sourceBody: {
-    color: '#5d5346',
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  sourceCard: {
-    backgroundColor: '#f4eadc',
-    borderColor: '#ead5b9',
-    borderRadius: 18,
-    borderWidth: 1,
-    flex: 1,
-    gap: 6,
-    padding: 14,
-  },
-  sourceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  sourceTitle: {
-    color: '#182026',
+  heroPeriod: {
+    color: '#8ea4c7',
     fontSize: 14,
     fontWeight: '700',
   },
-  retryButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#182026',
-    borderRadius: 999,
-    marginTop: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  heroTitle: {
+    color: '#ffffff',
+    fontSize: 42,
+    fontWeight: '800',
+    letterSpacing: -1.1,
   },
-  retryButtonText: {
-    color: '#fffaf2',
+  insightAction: {
+    color: '#006c4a',
     fontSize: 13,
+    fontWeight: '800',
+  },
+  insightCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3eb',
+    borderRadius: 28,
+    borderWidth: 1,
+    gap: 8,
+    padding: 22,
+  },
+  insightEvidence: {
+    color: '#7a8596',
+    fontSize: 12,
     fontWeight: '700',
   },
+  insightEyebrow: {
+    color: '#006c4a',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  insightImpact: {
+    color: '#000e24',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  insightRecommendation: {
+    color: '#000e24',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  insightTitle: {
+    color: '#000e24',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  primaryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#000e24',
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  reviewBadge: {
+    color: '#b03924',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   screen: {
-    backgroundColor: '#f4eadc',
+    backgroundColor: '#f7f9fb',
     flex: 1,
   },
   section: {
@@ -373,75 +561,132 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  sectionLink: {
+    color: '#006c4a',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   sectionTitle: {
-    color: '#182026',
-    fontSize: 20,
+    color: '#000e24',
+    fontSize: 24,
     fontWeight: '800',
   },
-  syncPill: {
-    backgroundColor: '#efe1cc',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  sourceChip: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3eb',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  syncPillText: {
-    color: '#7b6448',
-    fontSize: 12,
+  sourceChipPositive: {
+    backgroundColor: '#ebfff5',
+    borderColor: '#b8ebd2',
+  },
+  sourceChipText: {
+    color: '#4d5a6b',
+    fontSize: 13,
     fontWeight: '700',
-    textTransform: 'capitalize',
   },
-  syncValue: {
-    color: '#182026',
-    fontSize: 22,
-    fontWeight: '800',
+  sourceChipTextPositive: {
+    color: '#006c4a',
   },
-  title: {
-    color: '#fffaf2',
-    fontSize: 34,
-    fontWeight: '800',
+  sourceChipWarning: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#f1dcc0',
+  },
+  sparklineBar: {
+    backgroundColor: '#85f8c4',
+    borderRadius: 999,
+    minHeight: 18,
+    width: 12,
+  },
+  sparklineColumn: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  sparklineLabel: {
+    color: '#8ea4c7',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sparklineRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: 16,
+    marginVertical: 4,
+  },
+  sparklineTrack: {
+    alignItems: 'flex-end',
+    backgroundColor: '#11213e',
+    borderRadius: 24,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    height: 96,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   transactionAmount: {
-    color: '#182026',
+    color: '#000e24',
     fontSize: 16,
     fontWeight: '800',
   },
   transactionAmountBlock: {
     alignItems: 'flex-end',
-    gap: 6,
+    gap: 4,
+  },
+  transactionBadge: {
+    color: '#6f7c8d',
+    fontSize: 12,
+    fontWeight: '800',
   },
   transactionDetail: {
-    color: '#7b6448',
+    color: '#7a8596',
     fontSize: 13,
   },
   transactionMerchant: {
-    color: '#182026',
+    color: '#000e24',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   transactionMeta: {
     flex: 1,
     gap: 4,
   },
   transactionOwner: {
-    color: '#8a7559',
+    color: '#596677',
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   transactionRow: {
     alignItems: 'center',
-    backgroundColor: '#fffaf2',
-    borderColor: '#ead5b9',
-    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3eb',
+    borderRadius: 24,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 16,
+    gap: 14,
     justifyContent: 'space-between',
     padding: 18,
   },
-  activityBadge: {
-    alignSelf: 'flex-end',
-    color: '#7b6448',
+  trendBadge: {
+    alignItems: 'center',
+    backgroundColor: '#82f5c1',
+    borderRadius: 999,
+    justifyContent: 'center',
+    minHeight: 38,
+    minWidth: 76,
+    paddingHorizontal: 12,
+  },
+  trendBadgeDown: {
+    backgroundColor: '#ffd4cc',
+  },
+  trendBadgeText: {
+    color: '#002114',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

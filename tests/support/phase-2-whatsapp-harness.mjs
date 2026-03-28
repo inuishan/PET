@@ -59,6 +59,17 @@ export function createPhase2WhatsAppHarness(options = {}) {
           return { data: revokeParticipant(args, state, nowIso), error: null };
         case 'get_household_dashboard_summary':
           return { data: buildDashboardSummary(args.target_household_id, state), error: null };
+        case 'get_household_analytics_snapshot':
+          return {
+            data: buildAnalyticsSnapshot(args.target_household_id, state, {
+              bucket: args.target_bucket,
+              comparisonEndOn: args.target_comparison_end_on,
+              comparisonStartOn: args.target_comparison_start_on,
+              endOn: args.target_end_on,
+              startOn: args.target_start_on,
+            }),
+            error: null,
+          };
         case 'get_household_settings_summary':
           return { data: buildSettingsSummary(args.target_household_id, state), error: null };
         case 'reassign_transaction_category':
@@ -689,6 +700,94 @@ function buildSettingsSummary(householdId, state) {
       needsReviewStatementCount: 0,
       pendingStatementCount: 0,
     },
+  };
+}
+
+function buildAnalyticsSnapshot(householdId, state, period) {
+  const transactions = state.transactions.filter((entry) => entry.household_id === householdId);
+  const totalSpend = sumAmounts(transactions);
+  const categoryAllocation = state.categories
+    .map((category) => {
+      const categoryTransactions = transactions.filter((entry) => entry.category_id === category.id);
+      const categoryTotal = sumAmounts(categoryTransactions);
+
+      return {
+        categoryId: category.id,
+        categoryName: category.name,
+        reviewCount: categoryTransactions.filter((entry) => entry.needs_review).length,
+        shareBps: totalSpend === 0 ? 0 : Math.round((categoryTotal / totalSpend) * 10000),
+        totalSpend: categoryTotal,
+        transactionCount: categoryTransactions.length,
+      };
+    })
+    .filter((entry) => entry.transactionCount > 0);
+  const upiTransactions = transactions.filter((entry) => entry.source_type === 'upi_whatsapp');
+  const cardTransactions = transactions.filter((entry) => entry.source_type === 'credit_card_statement');
+  const spendByPaymentSource = [
+    {
+      paymentSourceLabel: 'Credit card',
+      shareBps: totalSpend === 0 ? 0 : Math.round((sumAmounts(cardTransactions) / totalSpend) * 10000),
+      sourceType: 'credit_card_statement',
+      totalSpend: sumAmounts(cardTransactions),
+      transactionCount: cardTransactions.length,
+    },
+    {
+      paymentSourceLabel: 'WhatsApp UPI',
+      shareBps: totalSpend === 0 ? 0 : Math.round((sumAmounts(upiTransactions) / totalSpend) * 10000),
+      sourceType: 'upi_whatsapp',
+      totalSpend: sumAmounts(upiTransactions),
+      transactionCount: upiTransactions.length,
+    },
+  ].filter((entry) => entry.transactionCount > 0);
+  const spendByPerson = state.householdMembers
+    .map((member) => {
+      const memberTransactions = transactions.filter((entry) => entry.owner_member_id === member.id);
+      const memberTotal = sumAmounts(memberTransactions);
+
+      return {
+        ownerDisplayName: member.display_name,
+        ownerMemberId: member.id,
+        ownerScope: 'member',
+        shareBps: totalSpend === 0 ? 0 : Math.round((memberTotal / totalSpend) * 10000),
+        totalSpend: memberTotal,
+        transactionCount: memberTransactions.length,
+      };
+    })
+    .filter((entry) => entry.transactionCount > 0);
+
+  return {
+    categoryAllocation,
+    comparison: {
+      currentSpend: totalSpend,
+      currentTransactionCount: transactions.length,
+      deltaPercentage: null,
+      deltaSpend: totalSpend,
+      previousSpend: 0,
+      previousTransactionCount: 0,
+    },
+    householdId,
+    insights: [],
+    latestReport: null,
+    period: {
+      bucket: period.bucket ?? 'month',
+      comparisonEndOn: period.comparisonEndOn ?? null,
+      comparisonStartOn: period.comparisonStartOn ?? null,
+      endOn: period.endOn,
+      startOn: period.startOn,
+    },
+    recurringChargeCandidates: [],
+    spendByPaymentSource,
+    spendByPerson,
+    trendSeries: [
+      {
+        bucketEndOn: period.endOn,
+        bucketLabel: 'Current period',
+        bucketStartOn: period.startOn,
+        reviewCount: transactions.filter((entry) => entry.needs_review).length,
+        totalSpend,
+        transactionCount: transactions.length,
+      },
+    ],
   };
 }
 

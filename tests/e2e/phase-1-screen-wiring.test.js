@@ -28,11 +28,15 @@ test('Phase 1 tab screens remain wired to dashboard and review-state models', ()
   assert.match(layoutSource, /Tabs\.Screen name="analytics"/);
   assert.match(dashboardSource, /loadDashboardSnapshot/);
   assert.match(dashboardSource, /createDashboardQueryKey/);
-  assert.match(dashboardSource, /Needs review/);
+  assert.match(dashboardSource, /buildDashboardScreenState/);
+  assert.match(dashboardSource, /router\.push/);
+  assert.match(dashboardSource, /AI Insights|Spend concentration|Deep Analysis/);
+  assert.match(dashboardSource, /analytics-report/);
   assert.match(dashboardSource, /WhatsApp UPI/);
   assert.match(analyticsSource, /loadAnalyticsSnapshot/);
   assert.match(analyticsSource, /createAnalyticsQueryKey/);
   assert.match(analyticsSource, /router\.push/);
+  assert.match(analyticsSource, /analytics-report|loadAnalyticsReport|reportId/);
   assert.match(analyticsSource, /Weekly|Monthly|Yearly/);
   assert.match(analyticsSource, /Allocation Audit|LLM Analysis|Deep Analysis/);
   assert.match(transactionsSource, /buildTransactionsScreenState/);
