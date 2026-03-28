@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = process.cwd();
 const mobileSrcRoot = path.join(repoRoot, 'apps', 'mobile', 'src');
@@ -31,11 +31,38 @@ export async function resolve(specifier, context, defaultResolve) {
     };
   }
 
+  if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL?.startsWith('file:')) {
+    const resolvedRelativePath = resolveRelativeSourcePath(specifier, context.parentURL);
+
+    if (resolvedRelativePath) {
+      return {
+        shortCircuit: true,
+        url: pathToFileURL(resolvedRelativePath).href,
+      };
+    }
+  }
+
   return defaultResolve(specifier, context, defaultResolve);
 }
 
 function resolveMobileSourcePath(specifierPath) {
-  const candidateBasePath = path.join(mobileSrcRoot, specifierPath);
+  const resolvedPath = resolveWithKnownExtensions(path.join(mobileSrcRoot, specifierPath));
+
+  if (resolvedPath) {
+    return resolvedPath;
+  }
+
+  throw new Error(`Unable to resolve mobile source specifier: @/${specifierPath}`);
+}
+
+function resolveRelativeSourcePath(specifier, parentUrl) {
+  const parentPath = fileURLToPath(parentUrl);
+  const parentDirectory = path.dirname(parentPath);
+
+  return resolveWithKnownExtensions(path.resolve(parentDirectory, specifier));
+}
+
+function resolveWithKnownExtensions(candidateBasePath) {
   const candidates = [
     candidateBasePath,
     `${candidateBasePath}.ts`,
@@ -54,5 +81,5 @@ function resolveMobileSourcePath(specifierPath) {
     }
   }
 
-  throw new Error(`Unable to resolve mobile source specifier: @/${specifierPath}`);
+  return null;
 }

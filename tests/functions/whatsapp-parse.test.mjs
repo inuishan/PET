@@ -72,6 +72,31 @@ test('parseWhatsAppExpenseMessage routes conflicting payer attribution to review
   assert.equal(result.transactionDate, '2026-03-26');
 });
 
+test('parseWhatsAppExpenseMessage keeps unlinked participants in review until an owner is known', () => {
+  const result = parseWhatsAppExpenseMessage({
+    householdId,
+    id: messageId,
+    normalizedMessageText: 'Paid 420 to Zepto for fruit',
+    participant: {
+      displayName: 'Shared phone',
+      id: participantId,
+      memberId: null,
+      phoneE164: '+919999888877',
+    },
+    providerMessageId: 'wamid.message-owner-unknown',
+    providerSentAt: '2026-03-27T08:45:00.000Z',
+    householdMembers: [
+      { displayName: 'Ishan', id: senderMemberId },
+      { displayName: 'Neha', id: spouseMemberId },
+    ],
+  });
+
+  assert.equal(result.parseStatus, 'needs_review');
+  assert.equal(result.ownerScope, 'unknown');
+  assert.equal(result.ownerMemberId, null);
+  assert.ok(result.reviewReasons.includes('owner_unknown'));
+});
+
 test('parseWhatsAppExpenseMessage fails closed when the amount cannot be validated', () => {
   const result = parseWhatsAppExpenseMessage({
     householdId,

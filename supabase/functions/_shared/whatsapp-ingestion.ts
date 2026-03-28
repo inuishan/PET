@@ -306,10 +306,24 @@ export function createSupabaseWhatsAppRepository(supabase: SupabaseLike): WhatsA
     },
 
     async markMessageHandoff(input) {
+      const currentMessage = await supabase
+        .from('whatsapp_messages')
+        .select('parse_metadata')
+        .eq('id', input.messageId)
+        .eq('household_id', input.householdId)
+        .maybeSingle();
+
+      if (currentMessage.error) {
+        throw new Error(`Failed to load WhatsApp parse metadata: ${currentMessage.error.message}`);
+      }
+
       const { error } = await supabase
         .from('whatsapp_messages')
         .update({
-          parse_metadata: input.parseMetadata,
+          parse_metadata: {
+            ...(currentMessage.data?.parse_metadata ?? {}),
+            ...input.parseMetadata,
+          },
           parse_status: input.parseStatus,
         })
         .eq('id', input.messageId)
