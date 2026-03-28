@@ -68,6 +68,7 @@ describe('loadTransactionsSnapshot', () => {
         needs_review: true,
         owner_member: {
           display_name: 'Ishan',
+          id: 'member-1',
         },
         owner_scope: 'member',
         posted_at: '2026-03-27',
@@ -101,6 +102,7 @@ describe('loadTransactionsSnapshot', () => {
           merchant: 'Google One',
           needsReview: true,
           ownerDisplayName: null,
+          ownerMemberId: null,
           ownerScope: 'unknown',
           postedAt: '2026-03-26T08:00:00.000Z',
           reviewReason: 'Needs manual confirmation.',
@@ -117,6 +119,7 @@ describe('loadTransactionsSnapshot', () => {
           merchant: 'Zepto',
           needsReview: true,
           ownerDisplayName: 'Ishan',
+          ownerMemberId: 'member-1',
           ownerScope: 'member',
           postedAt: '2026-03-27T08:00:00.000Z',
           reviewReason: 'owner_conflict',
