@@ -119,6 +119,22 @@ What it checks:
 - every configured `statementPasswordKey` has a corresponding local env var
 - FCM credentials are present and parse as service-account JSON
 
+Run the checked-in live validator in mock mode next:
+
+```bash
+npm run phase-1:validate-live -- \
+  --mode mock \
+  --mobile-env apps/mobile/.env.phase1.example \
+  --supabase-env supabase/.env.functions.phase1.example \
+  --n8n-env infra/n8n/.env.phase1.example
+```
+
+What mock mode validates:
+
+1. the contract-level parse and ingest smoke path still succeeds
+2. a low-confidence ingest persists `needs_review` rows and creates `review_queue_escalation` notifications
+3. an ingest persistence failure returns `statement_ingest_failed` and creates `statement_sync_blocked` notifications
+
 ## Smoke test
 
 Run the local contract smoke test after validation:
@@ -163,25 +179,76 @@ npm run phase-1:smoke -- \
 
 If you already have extracted statement text, use `--extracted-text-file /absolute/path/to/statement.txt` instead of `--pdf`.
 
+## Live validator
+
+Use the live validator for the first real Drive-triggered rollout check and for a deterministic failure-notification drill.
+
+Run the drive-drop validator before you upload the real PDF:
+
+```bash
+npm run phase-1:validate-live -- \
+  --mode live \
+  --delivery drive-drop \
+  --mobile-env apps/mobile/.env.phase1.example \
+  --supabase-env supabase/.env.functions.phase1.example \
+  --n8n-env infra/n8n/.env.phase1.example \
+  --provider-file-name "HDFC Regalia Gold Apr 2026.pdf" \
+  --expect-min-transactions 1
+```
+
+What `--delivery drive-drop` does:
+
+1. starts polling from the moment the command begins
+2. waits for a matching `statement_uploads` row for the configured household and file name or file id
+3. loads the related `transactions` rows
+4. loads matching `notifications` rows for the same file or related statement upload
+5. fails fast if the watched-folder run surfaces `statement_parse_failure` or `statement_sync_blocked`
+
+Use `--provider-file-id` instead of `--provider-file-name` if the Drive file name is reused. If you already dropped the file, add `--uploaded-after 2026-03-28T09:00:00Z` so the validator ignores older uploads.
+
+Run the deterministic failure drill after the happy path if you need proof that live failure notifications are persisted and observable:
+
+```bash
+npm run phase-1:validate-live -- \
+  --mode live \
+  --delivery ingest-failure-drill \
+  --mobile-env apps/mobile/.env.phase1.example \
+  --supabase-env supabase/.env.functions.phase1.example \
+  --n8n-env infra/n8n/.env.phase1.example \
+  --household-id <household-uuid> \
+  --expect-notification-type statement_sync_blocked
+```
+
+What `--delivery ingest-failure-drill` does:
+
+1. posts a deliberately broken payload to the deployed `statement-ingest` endpoint
+2. expects a `502` with `statement_ingest_failed`
+3. confirms that no `statement_uploads` row was persisted for the drill file id
+4. confirms that matching `statement_sync_blocked` notification rows were created in the live project
+
+The failure drill creates a visible notification artifact for the target household. Run it only where one validation alert is acceptable.
+
 ## Target-machine test order
 
 1. Fill the three env files.
 2. Apply Supabase migrations.
 3. Deploy `statement-parse` and `statement-ingest`.
 4. Run `npm run phase-1:validate-runtime`.
-5. Run `npm run phase-1:smoke`.
-6. Run `npm run phase-1:smoke -- --mode live --pdf /absolute/path/to/statement.pdf`.
-7. Import the n8n workflow and bind Google Drive credentials.
-8. Create the shared household in the mobile app and record its UUID in `STATEMENT_HOUSEHOLD_ID`.
-9. Drop a real statement into the watched Drive folder.
-10. Confirm:
-   - a `statement_uploads` row is created
-   - `transactions` rows are created
-   - low-confidence rows have `needs_review = true`
-   - `notifications` rows reflect any parse or ingest failure
+5. Run `npm run phase-1:validate-live -- --mode mock`.
+6. Run `npm run phase-1:smoke`.
+7. Run `npm run phase-1:smoke -- --mode live --pdf /absolute/path/to/statement.pdf`.
+8. Import the n8n workflow and bind Google Drive credentials.
+9. Create the shared household in the mobile app and record its UUID in `STATEMENT_HOUSEHOLD_ID`.
+10. Run the drive-drop validator before you upload the real PDF.
+11. Drop a real statement into the watched Drive folder.
+12. Wait for the validator to confirm:
+   - a `statement_uploads` row was created
+   - `transactions` rows were created
+   - the observed `needs_review` count matches the live parser result for that statement
+   - matching `notifications` rows remain visible for any live failure
+13. Run the failure drill if you need explicit live proof of notification persistence for the blocked-ingest path.
 
-## Remaining operational gaps
+## Operational limits
 
 - The checked-in mobile app exposes notification preferences in settings, but the repo does not yet include device-side push registration or topic subscription wiring. FCM transport can be configured server-side now, but end-device delivery still needs mobile implementation work.
-- The live smoke test validates the deployed parse and ingest endpoints plus the local PDF extraction command, but it still does not replay the Google Drive trigger itself. The first full-system validation on the target machine still needs an actual PDF dropped into the watched folder after n8n is connected.
 - The routing contract depends on file-name patterns. If statement naming is inconsistent across banks, add rules deliberately and keep them under source control rather than editing the imported workflow by hand.
