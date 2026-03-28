@@ -28,5 +28,9 @@ export function parsePublicEnv(input: Record<string, string | undefined>): Publi
 }
 
 export function getPublicEnv(): PublicEnv {
-  return parsePublicEnv(process.env as Record<string, string | undefined>);
+  return parsePublicEnv({
+    EXPO_PUBLIC_PHASE1_ALERT_PUSH_TOPIC_PREFIX: process.env.EXPO_PUBLIC_PHASE1_ALERT_PUSH_TOPIC_PREFIX,
+    EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  });
 }

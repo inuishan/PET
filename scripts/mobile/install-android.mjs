@@ -32,6 +32,7 @@ const FOOJAY_PLUGIN_INCOMPATIBLE_VERSION = '0.5.0';
 const EXPO_ROUTER_IMPORT_MODE = 'sync';
 const LOCAL_GRADLE_USER_HOME = path.resolve('.gradle', 'mobile-android');
 const MOBILE_DIRECTORY = 'apps/mobile';
+const APP_CONFIG_PATH = path.resolve(MOBILE_DIRECTORY, 'app.json');
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -162,6 +163,57 @@ export function buildAndroidInstallContext(options, environment = process.env) {
       envFilePath: resolvedEnvironment.envFilePath,
     },
     runtimeEnv: resolvedEnvironment.runtimeEnv,
+  };
+}
+
+export function parseExpoAppConfig(appConfigContents) {
+  const parsedConfig = JSON.parse(String(appConfigContents));
+
+  return parsedConfig.expo ?? {};
+}
+
+export function shouldSkipExpoPrebuild(context, appConfigContents = null) {
+  if (context.options.skipPrebuild) {
+    return {
+      reason: 'explicit',
+      skip: true,
+    };
+  }
+
+  if (!fs.existsSync(context.androidDirectory)) {
+    return {
+      reason: null,
+      skip: false,
+    };
+  }
+
+  if (!fs.existsSync(APP_CONFIG_PATH)) {
+    return {
+      reason: null,
+      skip: false,
+    };
+  }
+
+  const expoConfig = parseExpoAppConfig(
+    appConfigContents ?? fs.readFileSync(APP_CONFIG_PATH, 'utf8'),
+  );
+  const configuredPlugins = Array.isArray(expoConfig.plugins) ? expoConfig.plugins : [];
+  const usesFirebasePlugin = configuredPlugins.some((plugin) => {
+    const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
+    return pluginName === '@react-native-firebase/app' || pluginName === '@react-native-firebase/messaging';
+  });
+  const hasGoogleServicesFile = Boolean(expoConfig.android?.googleServicesFile);
+
+  if (usesFirebasePlugin && !hasGoogleServicesFile) {
+    return {
+      reason: 'missing-google-services-file',
+      skip: true,
+    };
+  }
+
+  return {
+    reason: null,
+    skip: false,
   };
 }
 
@@ -361,6 +413,7 @@ function runAndroidInstall(context) {
     context.options.deviceId,
   );
   const detectedArchitecture = resolveDeviceArchitecture(installTarget);
+  const prebuildDecision = shouldSkipExpoPrebuild(context);
 
   if (context.options.envFilePath) {
     console.log(`Using mobile env file: ${context.options.envFilePath}`);
@@ -378,7 +431,15 @@ function runAndroidInstall(context) {
   console.log(`Using Java ${javaRuntime.majorVersion} from ${javaRuntime.javaHome}`);
   console.log(`Using Android SDK at ${context.androidSdkPath}`);
 
-  if (!context.options.skipPrebuild) {
+  if (prebuildDecision.skip) {
+    if (prebuildDecision.reason === 'explicit') {
+      console.log('Skipping Expo prebuild because --skip-prebuild was requested.');
+    } else if (prebuildDecision.reason === 'missing-google-services-file') {
+      console.log(
+        'Skipping Expo prebuild because the native Android project already exists and app.json enables Firebase without expo.android.googleServicesFile.',
+      );
+    }
+  } else {
     runCommand('npx', ['expo', 'prebuild', '-p', 'android'], {
       cwd: context.mobileDirectory,
       env: context.runtimeEnv,
@@ -501,7 +562,7 @@ export function parseJavaMajorVersion(versionOutput) {
 }
 
 export function selectJavaRuntime(pathRuntime, discoveredRuntimes) {
-  if (pathRuntime && pathRuntime.majorVersion >= 17) {
+  if (pathRuntime && pathRuntime.majorVersion >= 17 && hasUsableJavaHome(pathRuntime.javaHome)) {
     return pathRuntime;
   }
 
@@ -516,12 +577,23 @@ export function selectJavaRuntime(pathRuntime, discoveredRuntimes) {
   return pathRuntime;
 }
 
+export function hasUsableJavaHome(javaHome) {
+  const normalizedJavaHome = String(javaHome ?? '').trim();
+
+  if (!normalizedJavaHome) {
+    return false;
+  }
+
+  const javaBinaryPath = path.join(normalizedJavaHome, 'bin', 'java');
+
+  return fs.existsSync(normalizedJavaHome) && fs.existsSync(javaBinaryPath);
+}
+
 function resolveJavaRuntime(environment) {
+  const configuredJavaHome = hasUsableJavaHome(environment.JAVA_HOME) ? environment.JAVA_HOME : null;
   const pathRuntime = inspectJavaRuntime(
-    environment.JAVA_HOME
-      ? path.join(environment.JAVA_HOME, 'bin', 'java')
-      : 'java',
-    environment.JAVA_HOME ?? null,
+    configuredJavaHome ? path.join(configuredJavaHome, 'bin', 'java') : 'java',
+    configuredJavaHome,
   );
   const discoveredRuntimes = DEFAULT_JAVA_HOME_CANDIDATES.map((javaHome) =>
     inspectJavaRuntime(path.join(javaHome, 'bin', 'java'), javaHome),

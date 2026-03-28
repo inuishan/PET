@@ -3,15 +3,18 @@ import test from 'node:test';
 
 import {
   buildAndroidInstallContext,
+  hasUsableJavaHome,
   mapDeviceAbiToReactNativeArchitecture,
   parseAdbDevicesOutput,
   parseArguments,
+  parseExpoAppConfig,
   parseJavaMajorVersion,
   patchExpoRouterContextContents,
   patchFoojayResolverVersion,
   resolveAndroidSdkPath,
   selectInstallTarget,
   selectJavaRuntime,
+  shouldSkipExpoPrebuild,
 } from '../../scripts/mobile/install-android.mjs';
 
 test('parseArguments reads supported installer flags', () => {
@@ -153,6 +156,31 @@ test('selectJavaRuntime prefers a discovered JDK 17+ when PATH points to Java 11
   });
 });
 
+test('hasUsableJavaHome rejects invalid JAVA_HOME values', () => {
+  assert.equal(hasUsableJavaHome('.'), false);
+  assert.equal(hasUsableJavaHome(''), false);
+});
+
+test('selectJavaRuntime ignores PATH java entries without a usable JAVA_HOME', () => {
+  const selectedRuntime = selectJavaRuntime(
+    {
+      javaHome: '.',
+      majorVersion: 21,
+    },
+    [
+      {
+        javaHome: '/usr/lib/jvm/java-21-openjdk-amd64',
+        majorVersion: 21,
+      },
+    ],
+  );
+
+  assert.deepEqual(selectedRuntime, {
+    javaHome: '/usr/lib/jvm/java-21-openjdk-amd64',
+    majorVersion: 21,
+  });
+});
+
 test('patchFoojayResolverVersion upgrades the incompatible Gradle 9 plugin version', () => {
   const original = 'plugins { id("org.gradle.toolchains.foojay-resolver-convention").version("0.5.0") }';
 
@@ -198,4 +226,71 @@ test('mapDeviceAbiToReactNativeArchitecture narrows the build to the connected A
   assert.equal(mapDeviceAbiToReactNativeArchitecture('arm64-v8a'), 'arm64-v8a');
   assert.equal(mapDeviceAbiToReactNativeArchitecture(' x86_64 '), 'x86_64');
   assert.equal(mapDeviceAbiToReactNativeArchitecture('mips'), null);
+});
+
+test('parseExpoAppConfig returns the expo section from app.json', () => {
+  const config = parseExpoAppConfig(
+    JSON.stringify({
+      expo: {
+        android: {
+          package: 'com.example.app',
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(config, {
+    android: {
+      package: 'com.example.app',
+    },
+  });
+});
+
+test('shouldSkipExpoPrebuild skips when firebase plugins are configured without google services in an existing native project', () => {
+  const decision = shouldSkipExpoPrebuild(
+    {
+      androidDirectory: '.',
+      options: {
+        skipPrebuild: false,
+      },
+    },
+    JSON.stringify({
+      expo: {
+        android: {
+          package: 'com.example.app',
+        },
+        plugins: ['@react-native-firebase/app'],
+      },
+    }),
+  );
+
+  assert.deepEqual(decision, {
+    reason: 'missing-google-services-file',
+    skip: true,
+  });
+});
+
+test('shouldSkipExpoPrebuild allows prebuild when google services config is present', () => {
+  const decision = shouldSkipExpoPrebuild(
+    {
+      androidDirectory: '.',
+      options: {
+        skipPrebuild: false,
+      },
+    },
+    JSON.stringify({
+      expo: {
+        android: {
+          googleServicesFile: './google-services.json',
+          package: 'com.example.app',
+        },
+        plugins: ['@react-native-firebase/app'],
+      },
+    }),
+  );
+
+  assert.deepEqual(decision, {
+    reason: null,
+    skip: false,
+  });
 });
