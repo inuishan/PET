@@ -133,6 +133,9 @@ export default function TransactionsScreen() {
   const selectedTransaction = resolvedSelectedTransactionId
     ? ledgerState?.transactions.find((transaction) => transaction.id === resolvedSelectedTransactionId) ?? null
     : null;
+  const selectedTransactionScreenRow = resolvedSelectedTransactionId
+    ? preferredTransactions.find((transaction) => transaction.id === resolvedSelectedTransactionId) ?? null
+    : null;
   const selectedCategory =
     selectedTransaction
       ? ledgerState?.categories.find((category) => category.id === selectedTransaction.categoryId) ??
@@ -349,6 +352,9 @@ export default function TransactionsScreen() {
           {selectedTransaction.ownerDisplayName ? (
             <Text style={styles.detailMeta}>Owner: {selectedTransaction.ownerDisplayName}</Text>
           ) : null}
+          {selectedTransactionScreenRow?.needsReview ? (
+            <Text style={styles.detailMeta}>Review priority: {formatReviewPriority(selectedTransactionScreenRow.reviewPriority)}</Text>
+          ) : null}
           <Text style={styles.body}>
             {selectedTransaction.reviewReason ?? 'This row is already trusted and included in the current household totals.'}
           </Text>
@@ -417,7 +423,7 @@ export default function TransactionsScreen() {
                     <View style={styles.transactionAmountBlock}>
                       <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
                       <Text style={styles.transactionState}>
-                        {transaction.needsReview ? 'Flagged' : 'Processed'}
+                        {transaction.needsReview ? formatReviewPriority(transaction.reviewPriority) : 'Processed'}
                       </Text>
                     </View>
                   </Pressable>
@@ -476,6 +482,14 @@ function resolvePeriodWindow(input: {
     endOn: periodWindow.endOn,
     startOn: periodWindow.startOn,
   };
+}
+
+function formatReviewPriority(priority: 'high' | 'low' | 'medium' | 'none') {
+  if (priority === 'none') {
+    return 'Processed';
+  }
+
+  return `${priority.charAt(0).toUpperCase()}${priority.slice(1)} priority`;
 }
 
 const styles = StyleSheet.create({

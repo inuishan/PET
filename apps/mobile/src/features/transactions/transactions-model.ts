@@ -27,6 +27,7 @@ export type TransactionsScreenState = {
       ownerMemberId: string | null;
       ownerScope: 'member' | 'shared' | 'unknown';
       postedAt: string;
+      reviewPriority: 'high' | 'low' | 'medium' | 'none';
       reviewReason: string | null;
       reviewReasons: string[];
       sourceBadge: 'Card' | 'UPI';
@@ -197,13 +198,12 @@ function groupTransactions(
   const filteredTransactions = filterTransactions(state, filter, options);
   const referenceDate = options.asOf ?? filteredTransactions[0]?.postedAt ?? state.transactions[0]?.postedAt ?? new Date().toISOString();
 
-  for (const transaction of [...filteredTransactions].sort(
-    (left, right) => new Date(right.postedAt).getTime() - new Date(left.postedAt).getTime()
-  )) {
+  for (const transaction of [...filteredTransactions].sort((left, right) => compareTransactions(left, right, filter))) {
     const dateLabel = formatShortDate(transaction.postedAt);
     const transactionWithCategory = {
       ...transaction,
       categoryName: getCategoryById(state.categories, transaction.categoryId).name,
+      reviewPriority: deriveReviewPriority(transaction),
       sourceBadge: transaction.sourceType === 'upi_whatsapp' ? 'UPI' : 'Card',
     };
     const existingGroup = groupedTransactions.get(dateLabel);
@@ -227,7 +227,21 @@ function groupTransactions(
     });
   }
 
-  return [...groupedTransactions.values()];
+  const groupedValues = [...groupedTransactions.values()];
+
+  if (filter !== 'needs_review') {
+    return groupedValues;
+  }
+
+  return groupedValues.sort((left, right) => {
+    const priorityDelta = getGroupPriorityWeight(right) - getGroupPriorityWeight(left);
+
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+
+    return new Date(right.transactions[0]?.postedAt ?? 0).getTime() - new Date(left.transactions[0]?.postedAt ?? 0).getTime();
+  });
 }
 
 function filterTransactions(
@@ -304,4 +318,76 @@ function startOfUtcDay(isoDate: string) {
   const date = new Date(isoDate);
 
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function compareTransactions(
+  left: TransactionsLedgerState['transactions'][number],
+  right: TransactionsLedgerState['transactions'][number],
+  filter: TransactionFilter
+) {
+  if (filter === 'needs_review') {
+    const priorityDelta = getPriorityWeight(deriveReviewPriority(right)) - getPriorityWeight(deriveReviewPriority(left));
+
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+  }
+
+  return new Date(right.postedAt).getTime() - new Date(left.postedAt).getTime();
+}
+
+function deriveReviewPriority(
+  transaction: TransactionsLedgerState['transactions'][number]
+): TransactionsScreenState['groups'][number]['transactions'][number]['reviewPriority'] {
+  if (!transaction.needsReview) {
+    return 'none';
+  }
+
+  const reasons = new Set(
+    [
+      ...transaction.reviewReasons,
+      ...(transaction.reviewReason ? transaction.reviewReason.split(',') : []),
+    ]
+      .map((reason) => reason.trim().toLowerCase())
+      .filter((reason) => reason.length > 0)
+  );
+
+  if (
+    transaction.confidence < 0.5 ||
+    hasAnyReason(reasons, ['amount_ambiguous', 'missing_amount', 'missing_merchant', 'owner_conflict'])
+  ) {
+    return 'high';
+  }
+
+  if (
+    transaction.confidence < 0.8 ||
+    hasAnyReason(reasons, ['low_confidence', 'needs_review', 'owner_unknown'])
+  ) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function getPriorityWeight(priority: TransactionsScreenState['groups'][number]['transactions'][number]['reviewPriority']) {
+  switch (priority) {
+    case 'high':
+      return 3;
+    case 'medium':
+      return 2;
+    case 'low':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function hasAnyReason(reasons: Set<string>, values: string[]) {
+  return values.some((value) => reasons.has(value));
+}
+
+function getGroupPriorityWeight(group: TransactionsScreenState['groups'][number]) {
+  return group.transactions.reduce((highestWeight, transaction) => {
+    return Math.max(highestWeight, getPriorityWeight(transaction.reviewPriority));
+  }, 0);
 }

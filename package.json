@@ -26,6 +26,7 @@
     "phase-3:validate-runtime": "node ./scripts/phase-3/validate-runtime-config.mjs",
     "phase-3:validate-live": "node --experimental-strip-types --loader ./tests/support/mobile-loader.mjs ./scripts/phase-3/run-live-validation.mjs",
     "test:phase-3": "node ./scripts/phase-3/run-verification.mjs",
+    "test:phase-4": "node ./scripts/phase-4/run-verification.mjs",
     "test:phase-1": "node --experimental-strip-types --loader ./tests/support/mobile-loader.mjs --test $(find tests -type f \\( -name '*.test.js' -o -name '*.test.mjs' \\))"
   }
 }

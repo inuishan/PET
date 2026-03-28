@@ -30,6 +30,12 @@ export function createPhase2WhatsAppHarness(options = {}) {
       { display_name: 'Ishan', household_id: householdId, id: ownerMemberId, user_id: ownerUserId },
       { display_name: 'Neha', household_id: householdId, id: spouseMemberId, user_id: spouseUserId },
     ],
+    merchantAliases: (options.merchantAliases ?? []).map((alias) => ({
+      category_id: alias.categoryId,
+      confidence: alias.confidence,
+      household_id: alias.householdId ?? householdId,
+      normalized_merchant_name: alias.normalizedMerchantName,
+    })),
     messages: [],
     notificationPreferences: [],
     notifications: [],
@@ -73,7 +79,7 @@ export function createPhase2WhatsAppHarness(options = {}) {
         case 'get_household_settings_summary':
           return { data: buildSettingsSummary(args.target_household_id, state), error: null };
         case 'reassign_transaction_category':
-          return { data: reassignTransactionCategory(args, state), error: null };
+          return { data: reassignTransactionCategory(args, state, ownerUserId), error: null };
         default:
           throw new Error(`Unexpected RPC: ${name}`);
       }
@@ -201,6 +207,20 @@ export function createPhase2WhatsAppHarness(options = {}) {
 
   const ingestRepository = {
     async classifyParsedTransaction(input) {
+      const matchedAlias = state.merchantAliases.find((alias) =>
+        alias.household_id === input.householdId
+        && alias.normalized_merchant_name === (input.merchantNormalized ?? '').toLowerCase()
+      );
+
+      if (matchedAlias?.category_id) {
+        return {
+          categoryId: matchedAlias.category_id,
+          confidence: matchedAlias.confidence ?? input.confidence,
+          method: 'inherited',
+          rationale: 'merchant_alias_match',
+        };
+      }
+
       const merchant = (input.merchantNormalized ?? input.merchantRaw ?? '').toLowerCase();
 
       if (/(zepto|blinkit|instamart|bigbasket)/.test(merchant)) {
@@ -261,6 +281,8 @@ export function createPhase2WhatsAppHarness(options = {}) {
         fingerprint: transaction.fingerprint,
         household_id: transaction.householdId,
         id: transactionId,
+        classification_method: transaction.classificationMethod,
+        merchant_normalized: transaction.merchantNormalized,
         merchant_raw: transaction.merchantRaw,
         metadata: { ...transaction.metadata },
         needs_review: transaction.needsReview,
@@ -344,6 +366,42 @@ export function createPhase2WhatsAppHarness(options = {}) {
     spouseMemberId,
     spouseUserId,
     state,
+    seedMerchantAlias(input) {
+      state.merchantAliases.push({
+        category_id: input.categoryId,
+        confidence: input.confidence ?? null,
+        household_id: input.householdId ?? householdId,
+        normalized_merchant_name: String(input.normalizedMerchantName ?? '').trim().toLowerCase(),
+      });
+    },
+    seedTransaction(input) {
+      const transaction = {
+        amount: input.amount,
+        category_id: input.categoryId,
+        classification_method: input.classificationMethod ?? 'rules',
+        confidence: input.confidence ?? 0.92,
+        created_at: nowIso,
+        description: input.description ?? null,
+        fingerprint: input.fingerprint ?? `${input.id ?? nextId('fingerprint')}-fingerprint`,
+        household_id: input.householdId ?? householdId,
+        id: input.id ?? nextId('transaction'),
+        merchant_normalized: normalizeMerchantName(input.merchantRaw ?? 'Unknown Merchant'),
+        merchant_raw: input.merchantRaw ?? 'Unknown Merchant',
+        metadata: { ...(input.metadata ?? {}) },
+        needs_review: input.needsReview ?? false,
+        owner_member_id: input.ownerMemberId ?? null,
+        owner_scope: input.ownerScope ?? 'unknown',
+        posted_at: input.postedAt ?? input.transactionDate,
+        review_reason: input.reviewReason ?? null,
+        source_reference: input.sourceReference ?? null,
+        source_type: input.sourceType ?? 'credit_card_statement',
+        status: input.status ?? ((input.needsReview ?? false) ? 'needs_review' : 'processed'),
+        transaction_date: input.transactionDate,
+      };
+
+      state.transactions.push(transaction);
+      return transaction.id;
+    },
 
     async captureInboundMessage(input = {}) {
       const parseResults = [];
@@ -655,10 +713,27 @@ function reassignTransactionCategory(args, state) {
     throw new Error('Transaction not found');
   }
 
+  const previousCategoryId = transaction.category_id;
   transaction.category_id = args.next_category_id;
+  transaction.classification_method = 'manual';
   transaction.needs_review = false;
   transaction.review_reason = null;
   transaction.status = 'processed';
+  state.classificationEvents.push({
+    confidence: transaction.confidence,
+    householdId: transaction.household_id,
+    metadata: {
+      clearedReviewState: true,
+      source: 'mobile_transactions_tab',
+    },
+    method: 'manual',
+    nextCategoryId: transaction.category_id,
+    previousCategoryId,
+    rationale: previousCategoryId === transaction.category_id
+      ? 'review_cleared_from_mobile_review'
+      : 'category_reassigned_from_mobile_review',
+    transactionId: transaction.id,
+  });
 
   return {
     transactionId: transaction.id,
@@ -786,7 +861,7 @@ function buildAnalyticsSnapshot(householdId, state, period) {
       endOn: period.endOn,
       startOn: period.startOn,
     },
-    recurringChargeCandidates: [],
+    recurringChargeCandidates: buildRecurringChargeCandidates(transactions, state, period.endOn),
     spendByPaymentSource,
     spendByPerson,
     trendSeries: [
@@ -804,6 +879,102 @@ function buildAnalyticsSnapshot(householdId, state, period) {
 
 function sumAmounts(rows) {
   return rows.reduce((total, row) => total + Number(row.amount ?? 0), 0);
+}
+
+function buildRecurringChargeCandidates(transactions, state, endOn) {
+  const windowStart = addDays(endOn, -365);
+  const windowTransactions = transactions
+    .filter((entry) => entry.transaction_date >= windowStart && entry.transaction_date <= endOn)
+    .sort((left, right) => left.transaction_date.localeCompare(right.transaction_date));
+  const groups = new Map();
+
+  for (const transaction of windowTransactions) {
+    const merchantName = readMerchantName(transaction);
+    const categoryName = state.categories.find((category) => category.id === transaction.category_id)?.name ?? 'Uncategorized';
+    const paymentSourceLabel = readPaymentSourceLabel(transaction);
+    const key = `${merchantName}:${categoryName}:${paymentSourceLabel}`;
+    const group = groups.get(key) ?? [];
+
+    group.push(transaction);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const activeMonths = new Set(group.map((transaction) => transaction.transaction_date.slice(0, 7))).size;
+      const merchantName = readMerchantName(group[0]);
+      const categoryName = state.categories.find((category) => category.id === group[0].category_id)?.name ?? 'Uncategorized';
+      const paymentSourceLabel = readPaymentSourceLabel(group[0]);
+
+      if (group.length < 2 || activeMonths < 2) {
+        return null;
+      }
+
+      return {
+        averageAmount: Math.round(sumAmounts(group) / group.length),
+        averageCadenceDays: group.length > 1
+          ? Math.round(diffDays(group[0].transaction_date, group[group.length - 1].transaction_date) / (group.length - 1))
+          : null,
+        categoryName,
+        lastChargedOn: group[group.length - 1].transaction_date,
+        merchantName,
+        monthsActive: activeMonths,
+        paymentSourceLabel,
+        transactionCount: group.length,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (right.transactionCount !== left.transactionCount) {
+        return right.transactionCount - left.transactionCount;
+      }
+
+      if (right.averageAmount !== left.averageAmount) {
+        return right.averageAmount - left.averageAmount;
+      }
+
+      return left.merchantName.localeCompare(right.merchantName);
+    });
+}
+
+function readPaymentSourceLabel(transaction) {
+  if (transaction.source_type === 'upi_whatsapp') {
+    return 'WhatsApp UPI';
+  }
+
+  const cardName = transaction.metadata?.cardName;
+  return typeof cardName === 'string' && cardName.trim().length > 0 ? cardName.trim() : 'Credit card';
+}
+
+function diffDays(leftDate, rightDate) {
+  const left = new Date(`${leftDate}T00:00:00.000Z`).getTime();
+  const right = new Date(`${rightDate}T00:00:00.000Z`).getTime();
+
+  return Math.round((right - left) / 86400000);
+}
+
+function normalizeMerchantName(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function readMerchantName(transaction) {
+  const normalizedMerchant = normalizeOptionalString(transaction.merchant_normalized);
+
+  if (normalizedMerchant) {
+    return normalizedMerchant;
+  }
+
+  return normalizeOptionalString(transaction.merchant_raw) ?? 'Unknown merchant';
+}
+
+function addDays(date, days) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
 }
 
 function requireMessage(state, householdId, messageId) {
