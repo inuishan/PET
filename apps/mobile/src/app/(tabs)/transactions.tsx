@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuthSession } from '@/features/auth/auth-session';
-import { formatCurrency, formatShortDate } from '@/features/core-product/core-product-formatting';
+import { createAnalyticsPeriodWindow } from '@/features/analytics/analytics-model';
+import { formatCurrency } from '@/features/core-product/core-product-formatting';
 import { createDashboardQueryKey } from '@/features/dashboard/dashboard-service';
+import {
+  readTransactionsDrilldownParams,
+  resolveTransactionsDrilldown,
+  type TransactionsPeriodBucket,
+} from '@/features/transactions/transactions-drilldown';
 import {
   buildTransactionsScreenState,
   reassignTransactionCategory,
@@ -17,7 +24,7 @@ import {
 } from '@/features/transactions/transactions-service';
 import { getSupabaseClient } from '@/lib/supabase';
 
-const filterOptions: Array<{
+const reviewFilterOptions: Array<{
   id: TransactionFilter;
   label: (reviewQueueCount: number) => string;
 }> = [
@@ -25,11 +32,41 @@ const filterOptions: Array<{
   { id: 'needs_review', label: (reviewQueueCount) => `Needs review (${reviewQueueCount})` },
 ];
 
+const periodOptions: Array<{
+  id: TransactionsPeriodBucket;
+  label: string;
+}> = [
+  { id: 'all', label: 'All time' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+  { id: 'year', label: 'Year' },
+];
+
 export default function TransactionsScreen() {
   const { session } = useAuthSession();
+  const localSearchParams = useLocalSearchParams();
+  const initialDrilldown = resolveTransactionsDrilldown(readTransactionsDrilldownParams(localSearchParams));
+  const drilldownSignature = [
+    initialDrilldown.categoryId,
+    initialDrilldown.endOn,
+    initialDrilldown.ownerMemberId,
+    initialDrilldown.ownerScope,
+    initialDrilldown.periodBucket,
+    initialDrilldown.searchQuery,
+    initialDrilldown.sourceType,
+    initialDrilldown.startOn,
+    initialDrilldown.subtitle,
+    initialDrilldown.title,
+    initialDrilldown.transactionIds.join(','),
+  ].join('|');
   const [filter, setFilter] = useState<TransactionFilter>('all');
+  const [searchQuery, setSearchQuery] = useState(initialDrilldown.searchQuery);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialDrilldown.categoryId);
+  const [selectedPeriodBucket, setSelectedPeriodBucket] = useState<TransactionsPeriodBucket>(initialDrilldown.periodBucket);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [includeEvidenceSet, setIncludeEvidenceSet] = useState(initialDrilldown.transactionIds.length > 0);
   const [supabase] = useState(() => getSupabaseClient());
+  const [transactionsAsOf] = useState(() => new Date().toISOString());
   const queryClient = useQueryClient();
   const householdId =
     session.status === 'signed_in' && session.household.status === 'ready' ? session.household.householdId : null;
@@ -70,9 +107,25 @@ export default function TransactionsScreen() {
     },
   });
   const ledgerState = transactionsQuery.data ?? null;
-  const screenState = ledgerState ? buildTransactionsScreenState(ledgerState, filter) : null;
-  const preferredTransactions =
-    filter === 'needs_review' ? (screenState?.groups.flatMap((group) => group.transactions) ?? []) : (ledgerState?.transactions ?? []);
+  const resolvedPeriod = resolvePeriodWindow({
+    analyticsAsOf: transactionsAsOf,
+    initialDrilldown,
+    selectedPeriodBucket,
+  });
+  const screenState = ledgerState
+    ? buildTransactionsScreenState(ledgerState, filter, {
+        asOf: transactionsAsOf,
+        categoryId: selectedCategoryId,
+        endOn: resolvedPeriod.endOn,
+        ownerMemberId: initialDrilldown.ownerMemberId,
+        ownerScope: initialDrilldown.ownerScope,
+        searchQuery,
+        sourceType: initialDrilldown.sourceType,
+        startOn: resolvedPeriod.startOn,
+        transactionIds: includeEvidenceSet ? initialDrilldown.transactionIds : [],
+      })
+    : null;
+  const preferredTransactions = screenState?.groups.flatMap((group) => group.transactions) ?? [];
   const resolvedSelectedTransactionId =
     preferredTransactions.some((transaction) => transaction.id === selectedTransactionId)
       ? selectedTransactionId
@@ -93,13 +146,28 @@ export default function TransactionsScreen() {
     }
   }, [resolvedSelectedTransactionId, selectedTransactionId]);
 
+  useEffect(() => {
+    setFilter('all');
+    setSearchQuery(initialDrilldown.searchQuery);
+    setSelectedCategoryId(initialDrilldown.categoryId);
+    setSelectedPeriodBucket(initialDrilldown.periodBucket);
+    setSelectedTransactionId(null);
+    setIncludeEvidenceSet(initialDrilldown.transactionIds.length > 0);
+  }, [drilldownSignature]);
+
+  function clearEvidenceSet() {
+    if (includeEvidenceSet) {
+      setIncludeEvidenceSet(false);
+    }
+  }
+
   if (transactionsQuery.isPending) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <Text style={styles.title}>Transactions</Text>
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>Loading household transactions</Text>
-          <Text style={styles.body}>Pulling the latest statement rows and review queue from Supabase.</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Loading transactions</Text>
+          <Text style={styles.body}>Pulling the latest household rows, filters, and review queue from Supabase.</Text>
         </View>
       </ScrollView>
     );
@@ -109,12 +177,12 @@ export default function TransactionsScreen() {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <Text style={styles.title}>Transactions</Text>
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>Unable to load transactions</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Unable to load transactions</Text>
           <Text style={styles.body}>
             {transactionsQuery.error instanceof Error
               ? transactionsQuery.error.message
-              : 'The review queue could not be loaded.'}
+              : 'The transactions view could not be loaded.'}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -125,10 +193,6 @@ export default function TransactionsScreen() {
         </View>
       </ScrollView>
     );
-  }
-
-  if (!transactionsQuery.data) {
-    return null;
   }
 
   if (!ledgerState || !screenState) {
@@ -150,20 +214,115 @@ export default function TransactionsScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Transactions</Text>
       <Text style={styles.body}>
-        Review statement rows and WhatsApp UPI captures together, then correct categories before the
-        shared household totals are trusted.
+        Search by vendor, filter by Category and Period, and keep the analytics drill-down view tied to the real ledger rows.
       </Text>
 
+      {initialDrilldown.title || screenState.filterSummary.length > 0 ? (
+        <View style={styles.heroCard}>
+          <Text style={styles.heroKicker}>Focused view</Text>
+          <Text style={styles.heroTitle}>{initialDrilldown.title ?? 'Filtered transaction set'}</Text>
+          <Text style={styles.heroBody}>
+            {initialDrilldown.subtitle ?? 'Drilled down from analytics into the matching household transaction subset.'}
+          </Text>
+          {screenState.filterSummary.length > 0 ? (
+            <Text style={styles.heroFootnote}>{screenState.filterSummary.join(' · ')}</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={styles.card}>
+        <Text style={styles.fieldLabel}>Search</Text>
+        <TextInput
+          accessibilityLabel="Search by vendor"
+          onChangeText={(value) => {
+            clearEvidenceSet();
+            setSearchQuery(value);
+          }}
+          placeholder="Search by vendor..."
+          placeholderTextColor="#8993a0"
+          style={styles.searchInput}
+          value={searchQuery}
+        />
+
+        <Text style={styles.fieldLabel}>Category</Text>
+        <View style={styles.filterRow}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              clearEvidenceSet();
+              setSelectedCategoryId(null);
+            }}
+            style={[styles.filterChip, selectedCategoryId === null ? styles.filterChipActive : null]}>
+            <Text style={[styles.filterChipText, selectedCategoryId === null ? styles.filterChipTextActive : null]}>
+              All
+            </Text>
+          </Pressable>
+          {screenState.categoryOptions.map((category) => {
+            const isActive = selectedCategoryId === category.id;
+
+            return (
+              <Pressable
+                key={category.id}
+                accessibilityRole="button"
+                onPress={() => {
+                  clearEvidenceSet();
+                  setSelectedCategoryId(category.id);
+                }}
+                style={[styles.filterChip, isActive ? styles.filterChipActive : null]}>
+                <Text style={[styles.filterChipText, isActive ? styles.filterChipTextActive : null]}>
+                  {category.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.fieldLabel}>Period</Text>
+        <View style={styles.filterRow}>
+          {periodOptions.map((option) => {
+            const isActive = selectedPeriodBucket === option.id;
+
+            return (
+              <Pressable
+                key={option.id}
+                accessibilityRole="button"
+                onPress={() => {
+                  clearEvidenceSet();
+                  setSelectedPeriodBucket(option.id);
+                }}
+                style={[styles.filterChip, isActive ? styles.filterChipActive : null]}>
+                <Text style={[styles.filterChipText, isActive ? styles.filterChipTextActive : null]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+          {initialDrilldown.periodBucket === 'custom' ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setSelectedPeriodBucket('custom')}
+              style={[styles.filterChip, selectedPeriodBucket === 'custom' ? styles.filterChipActive : null]}>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedPeriodBucket === 'custom' ? styles.filterChipTextActive : null,
+                ]}>
+                Focused
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
       <View style={styles.summaryCard}>
-        <Text style={styles.sectionLabel}>Source mix</Text>
-        <Text style={styles.summaryTitle}>Card and WhatsApp UPI activity stay in one ledger.</Text>
-        <Text style={styles.detailBody}>
+        <Text style={styles.sectionTitle}>Source mix</Text>
+        <Text style={styles.summaryBody}>
           {screenState.sourceSummary.creditCardCount} card rows · {screenState.sourceSummary.upiCount} WhatsApp UPI captures · {screenState.sourceSummary.upiReviewCount} UPI captures still need review.
         </Text>
       </View>
 
       <View style={styles.filterRow}>
-        {filterOptions.map((option) => {
+        {reviewFilterOptions.map((option) => {
           const isActive = filter === option.id;
 
           return (
@@ -181,25 +340,22 @@ export default function TransactionsScreen() {
       </View>
 
       {selectedTransaction && selectedCategory ? (
-        <View style={styles.detailCard}>
-          <Text style={styles.sectionLabel}>Selected transaction</Text>
-          <Text style={styles.detailTitle}>{selectedTransaction.merchant}</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{selectedTransaction.merchant}</Text>
           <Text style={styles.detailAmount}>{formatCurrency(selectedTransaction.amount)}</Text>
           <Text style={styles.detailMeta}>
-            {selectedCategory.name} · {formatShortDate(selectedTransaction.postedAt)} · {selectedTransaction.sourceLabel}
+            {selectedCategory.name} · {selectedTransaction.sourceLabel} · {selectedTransaction.sourceContextLabel}
           </Text>
-          <Text style={styles.detailMeta}>
-            {selectedTransaction.sourceContextLabel}
-            {selectedTransaction.ownerDisplayName ? ` · Owner: ${selectedTransaction.ownerDisplayName}` : ''}
-          </Text>
-          <Text style={styles.detailBody}>
-            {selectedTransaction.reviewReason ?? 'This row is already trusted and included in the household totals.'}
+          {selectedTransaction.ownerDisplayName ? (
+            <Text style={styles.detailMeta}>Owner: {selectedTransaction.ownerDisplayName}</Text>
+          ) : null}
+          <Text style={styles.body}>
+            {selectedTransaction.reviewReason ?? 'This row is already trusted and included in the current household totals.'}
           </Text>
           {reassignCategoryMutation.error instanceof Error ? (
             <Text style={styles.errorText}>{reassignCategoryMutation.error.message}</Text>
           ) : null}
-
-          <View style={styles.categoryGrid}>
+          <View style={styles.filterRow}>
             {screenState.categoryOptions.map((category) => {
               const isActive = selectedTransaction.categoryId === category.id;
 
@@ -210,11 +366,11 @@ export default function TransactionsScreen() {
                   disabled={reassignCategoryMutation.isPending}
                   onPress={() => handleReassignCategory(category.id)}
                   style={[
-                    styles.categoryChip,
-                    isActive ? styles.categoryChipActive : null,
-                    reassignCategoryMutation.isPending ? styles.categoryChipDisabled : null,
+                    styles.filterChip,
+                    isActive ? styles.filterChipActive : null,
+                    reassignCategoryMutation.isPending ? styles.filterChipDisabled : null,
                   ]}>
-                  <Text style={[styles.categoryChipText, isActive ? styles.categoryChipTextActive : null]}>
+                  <Text style={[styles.filterChipText, isActive ? styles.filterChipTextActive : null]}>
                     {category.name}
                   </Text>
                 </Pressable>
@@ -222,22 +378,19 @@ export default function TransactionsScreen() {
             })}
           </View>
         </View>
-      ) : (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>Review queue clear</Text>
-          <Text style={styles.body}>All flagged transactions in this household have been reviewed.</Text>
-        </View>
-      )}
+      ) : null}
 
       {screenState.groups.length > 0 ? (
         <View style={styles.section}>
           {screenState.groups.map((group) => (
-            <View key={group.dateLabel} style={styles.groupCard}>
+            <View key={`${group.heading}-${group.dateLabel}`} style={styles.groupCard}>
               <View style={styles.groupHeader}>
-                <Text style={styles.groupTitle}>{group.dateLabel}</Text>
+                <View>
+                  <Text style={styles.groupTitle}>{group.heading}</Text>
+                  <Text style={styles.groupDate}>{group.dateLabel}</Text>
+                </View>
                 <Text style={styles.groupTotal}>{formatCurrency(group.totalAmount)}</Text>
               </View>
-
               {group.transactions.map((transaction) => {
                 const isSelected = selectedTransaction?.id === transaction.id;
 
@@ -246,20 +399,26 @@ export default function TransactionsScreen() {
                     key={transaction.id}
                     accessibilityRole="button"
                     onPress={() => setSelectedTransactionId(transaction.id)}
-                    style={[styles.transactionRow, isSelected ? styles.transactionRowSelected : null]}>
+                    style={[styles.transactionCard, isSelected ? styles.transactionCardSelected : null]}>
                     <View style={styles.transactionMeta}>
                       <Text style={styles.transactionMerchant}>{transaction.merchant}</Text>
                       <Text style={styles.transactionDetail}>
-                        {transaction.sourceLabel} · {transaction.categoryName} · {transaction.sourceContextLabel}
+                        {transaction.categoryName} · {transaction.sourceLabel}
                       </Text>
-                      {transaction.ownerDisplayName ? (
-                        <Text style={styles.transactionOwner}>Owner: {transaction.ownerDisplayName}</Text>
-                      ) : null}
+                      <View style={styles.transactionTagRow}>
+                        {transaction.ownerDisplayName ? (
+                          <Text style={styles.transactionTag}>{transaction.ownerDisplayName}</Text>
+                        ) : null}
+                        <Text style={styles.transactionTag}>
+                          {transaction.sourceBadge === 'UPI' ? 'WhatsApp UPI' : transaction.sourceLabel}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.amountMeta}>
+                    <View style={styles.transactionAmountBlock}>
                       <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
-                      <Text style={styles.sourceBadge}>{transaction.sourceBadge}</Text>
-                      {transaction.needsReview ? <Text style={styles.reviewBadge}>Needs review</Text> : null}
+                      <Text style={styles.transactionState}>
+                        {transaction.needsReview ? 'Flagged' : 'Processed'}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -268,12 +427,12 @@ export default function TransactionsScreen() {
           ))}
         </View>
       ) : (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No rows in this view</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>No rows in this view</Text>
           <Text style={styles.body}>
             {filter === 'needs_review'
               ? 'All flagged rows are resolved for this household.'
-              : 'No statement rows are available for this household yet.'}
+              : 'No transactions matched the current search and filter selection.'}
           </Text>
         </View>
       )}
@@ -281,113 +440,103 @@ export default function TransactionsScreen() {
   );
 }
 
+function resolvePeriodWindow(input: {
+  analyticsAsOf: string;
+  initialDrilldown: ReturnType<typeof readTransactionsDrilldownParams>;
+  selectedPeriodBucket: TransactionsPeriodBucket;
+}) {
+  if (input.selectedPeriodBucket === 'all') {
+    return {
+      endOn: null,
+      startOn: null,
+    };
+  }
+
+  if (
+    input.initialDrilldown.periodBucket === input.selectedPeriodBucket &&
+    input.initialDrilldown.startOn &&
+    input.initialDrilldown.endOn
+  ) {
+    return {
+      endOn: input.initialDrilldown.endOn,
+      startOn: input.initialDrilldown.startOn,
+    };
+  }
+
+  if (input.selectedPeriodBucket === 'custom') {
+    return {
+      endOn: input.initialDrilldown.endOn,
+      startOn: input.initialDrilldown.startOn,
+    };
+  }
+
+  const periodWindow = createAnalyticsPeriodWindow(input.selectedPeriodBucket, input.analyticsAsOf);
+
+  return {
+    endOn: periodWindow.endOn,
+    startOn: periodWindow.startOn,
+  };
+}
+
 const styles = StyleSheet.create({
-  amountMeta: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
   body: {
-    color: '#5d5346',
+    color: '#5d6675',
     fontSize: 15,
     lineHeight: 22,
   },
-  categoryChip: {
-    backgroundColor: '#f4eadc',
-    borderColor: '#e3ccb0',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  categoryChipActive: {
-    backgroundColor: '#182026',
-    borderColor: '#182026',
-  },
-  categoryChipDisabled: {
-    opacity: 0.6,
-  },
-  categoryChipText: {
-    color: '#7b6448',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  categoryChipTextActive: {
-    color: '#fffaf2',
-  },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 26,
     gap: 10,
-    marginTop: 4,
+    padding: 20,
   },
   content: {
-    backgroundColor: '#f4eadc',
+    backgroundColor: '#f7f9fb',
     gap: 18,
     padding: 20,
     paddingBottom: 36,
   },
   detailAmount: {
-    color: '#182026',
+    color: '#000e24',
     fontSize: 28,
     fontWeight: '800',
   },
-  detailBody: {
-    color: '#5d5346',
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  detailCard: {
-    backgroundColor: '#fffaf2',
-    borderColor: '#e3ccb0',
-    borderRadius: 26,
-    borderWidth: 1,
-    gap: 8,
-    padding: 20,
-  },
   detailMeta: {
-    color: '#7b6448',
+    color: '#6f7885',
     fontSize: 13,
     lineHeight: 20,
   },
-  detailTitle: {
-    color: '#182026',
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  emptyCard: {
-    backgroundColor: '#fffaf2',
-    borderColor: '#ead5b9',
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 8,
-    padding: 20,
-  },
-  emptyTitle: {
-    color: '#182026',
-    fontSize: 18,
-    fontWeight: '800',
-  },
   errorText: {
-    color: '#a64b2a',
+    color: '#a24a2a',
     fontSize: 13,
     fontWeight: '700',
   },
+  fieldLabel: {
+    color: '#6f7885',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
   filterChip: {
-    backgroundColor: '#efe1cc',
+    backgroundColor: '#e7ebf0',
     borderRadius: 999,
-    paddingHorizontal: 16,
+    paddingHorizontal: 15,
     paddingVertical: 10,
   },
   filterChipActive: {
-    backgroundColor: '#182026',
+    backgroundColor: '#000e24',
+  },
+  filterChipDisabled: {
+    opacity: 0.55,
   },
   filterChipText: {
-    color: '#7b6448',
+    color: '#5d6675',
     fontSize: 13,
     fontWeight: '700',
   },
   filterChipTextActive: {
-    color: '#fffaf2',
+    color: '#ffffff',
   },
   filterRow: {
     flexDirection: 'row',
@@ -395,116 +544,161 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   groupCard: {
-    backgroundColor: '#fffaf2',
-    borderColor: '#ead5b9',
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 6,
+    backgroundColor: '#ffffff',
+    borderRadius: 26,
+    gap: 12,
     padding: 18,
+  },
+  groupDate: {
+    color: '#7f8895',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
   },
   groupHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
   },
   groupTitle: {
-    color: '#182026',
-    fontSize: 18,
+    color: '#000e24',
+    fontSize: 20,
     fontWeight: '800',
   },
   groupTotal: {
-    color: '#7b6448',
+    color: '#000e24',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  heroBody: {
+    color: '#becad8',
     fontSize: 14,
-    fontWeight: '700',
+    lineHeight: 21,
   },
-  reviewBadge: {
-    color: '#a64b2a',
+  heroCard: {
+    backgroundColor: '#000e24',
+    borderRadius: 30,
+    gap: 8,
+    padding: 24,
+  },
+  heroFootnote: {
+    color: '#85f8c4',
     fontSize: 12,
     fontWeight: '700',
   },
-  retryButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#182026',
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  retryButtonText: {
-    color: '#fffaf2',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  screen: {
-    backgroundColor: '#f4eadc',
-    flex: 1,
-  },
-  section: {
-    gap: 14,
-  },
-  sourceBadge: {
-    color: '#7b6448',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  sectionLabel: {
-    color: '#7b6448',
+  heroKicker: {
+    color: '#85f8c4',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
-  title: {
-    color: '#182026',
-    fontSize: 32,
+  heroTitle: {
+    color: '#ffffff',
+    fontSize: 28,
     fontWeight: '800',
   },
+  retryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#000e24',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  screen: {
+    backgroundColor: '#f7f9fb',
+    flex: 1,
+  },
+  searchInput: {
+    backgroundColor: '#eef2f6',
+    borderRadius: 18,
+    color: '#000e24',
+    fontSize: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  section: {
+    gap: 14,
+  },
+  sectionTitle: {
+    color: '#000e24',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  summaryBody: {
+    color: '#5d6675',
+    fontSize: 14,
+    lineHeight: 21,
+  },
   summaryCard: {
-    backgroundColor: '#fffaf2',
-    borderColor: '#ead5b9',
-    borderRadius: 24,
-    borderWidth: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 26,
     gap: 8,
     padding: 20,
   },
-  summaryTitle: {
-    color: '#182026',
-    fontSize: 20,
+  title: {
+    color: '#000e24',
+    fontSize: 32,
     fontWeight: '800',
   },
   transactionAmount: {
-    color: '#182026',
+    color: '#000e24',
     fontSize: 16,
     fontWeight: '800',
   },
+  transactionAmountBlock: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  transactionCard: {
+    alignItems: 'center',
+    backgroundColor: '#eef2f6',
+    borderRadius: 22,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  transactionCardSelected: {
+    backgroundColor: '#dfe8f2',
+  },
   transactionDetail: {
-    color: '#7b6448',
+    color: '#6f7885',
     fontSize: 13,
   },
   transactionMerchant: {
-    color: '#182026',
-    fontSize: 15,
+    color: '#000e24',
+    fontSize: 16,
     fontWeight: '700',
   },
   transactionMeta: {
     flex: 1,
-    gap: 4,
+    gap: 5,
   },
-  transactionOwner: {
-    color: '#8a7559',
-    fontSize: 12,
-    fontWeight: '600',
+  transactionState: {
+    color: '#006c4a',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
-  transactionRow: {
-    alignItems: 'center',
-    borderRadius: 18,
+  transactionTag: {
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    color: '#5d6675',
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  transactionTagRow: {
     flexDirection: 'row',
-    gap: 14,
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-    paddingVertical: 10,
-  },
-  transactionRowSelected: {
-    backgroundColor: '#f8ecdc',
+    flexWrap: 'wrap',
+    gap: 8,
   },
 });

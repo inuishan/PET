@@ -9,8 +9,10 @@ export type TransactionsScreenState = {
     id: string;
     name: string;
   }>;
+  filterSummary: string[];
   groups: Array<{
     dateLabel: string;
+    heading: string;
     totalAmount: number;
     transactionCount: number;
     transactions: Array<{
@@ -22,6 +24,7 @@ export type TransactionsScreenState = {
       merchant: string;
       needsReview: boolean;
       ownerDisplayName: string | null;
+      ownerMemberId: string | null;
       ownerScope: 'member' | 'shared' | 'unknown';
       postedAt: string;
       reviewReason: string | null;
@@ -40,16 +43,30 @@ export type TransactionsScreenState = {
   };
 };
 
+export type TransactionsScreenOptions = {
+  asOf?: string;
+  categoryId?: string | null;
+  endOn?: string | null;
+  ownerMemberId?: string | null;
+  ownerScope?: 'all' | 'member' | 'shared' | 'unknown' | null;
+  searchQuery?: string | null;
+  sourceType?: 'all' | 'credit_card_statement' | 'upi_whatsapp' | null;
+  startOn?: string | null;
+  transactionIds?: string[] | null;
+};
+
 export function buildTransactionsScreenState(
   state: TransactionsLedgerState,
-  filter: TransactionFilter = 'all'
+  filter: TransactionFilter = 'all',
+  options: TransactionsScreenOptions = {}
 ): TransactionsScreenState {
   return {
     categoryOptions: state.categories.map((category) => ({
       id: category.id,
       name: category.name,
     })),
-    groups: groupTransactions(state, filter),
+    filterSummary: buildFilterSummary(state, options),
+    groups: groupTransactions(state, filter, options),
     reviewQueueCount: state.transactions.filter((transaction) => transaction.needsReview).length,
     sourceSummary: {
       creditCardCount: state.transactions.filter((transaction) => transaction.sourceType === 'credit_card_statement').length,
@@ -95,15 +112,90 @@ export function reassignTransactionCategory(
   };
 }
 
+function buildFilterSummary(state: TransactionsLedgerState, options: TransactionsScreenOptions) {
+  const summary: string[] = [];
+  const hasExplicitEvidenceSet = Boolean(options.transactionIds && options.transactionIds.length > 0);
+
+  if (options.categoryId) {
+    const categoryName = state.categories.find((category) => category.id === options.categoryId)?.name;
+
+    if (categoryName) {
+      summary.push(categoryName);
+    }
+  }
+
+  if (options.sourceType && options.sourceType !== 'all') {
+    summary.push(options.sourceType === 'upi_whatsapp' ? 'WhatsApp UPI' : 'Credit card');
+  }
+
+  if (options.startOn && options.endOn) {
+    summary.push(formatPeriodLabel(options.startOn, options.endOn));
+  }
+
+  if (options.searchQuery && options.searchQuery.trim().length > 0) {
+    summary.push(`Search: ${options.searchQuery.trim().toLowerCase()}`);
+  }
+
+  if (options.ownerMemberId) {
+    const ownerName = state.transactions.find((transaction) => transaction.ownerMemberId === options.ownerMemberId)?.ownerDisplayName;
+
+    if (ownerName) {
+      summary.push(ownerName);
+    }
+  } else if (options.ownerScope === 'shared') {
+    summary.push('Shared');
+  } else if (options.ownerScope === 'unknown') {
+    summary.push('Unknown');
+  }
+
+  if (hasExplicitEvidenceSet) {
+    summary.push('Focused evidence set');
+  }
+
+  return summary;
+}
+
+function formatPeriodLabel(startOn: string, endOn: string) {
+  const start = new Date(`${startOn}T00:00:00.000Z`);
+  const end = new Date(`${endOn}T00:00:00.000Z`);
+
+  if (
+    start.getUTCDate() === 1 &&
+    end.getUTCFullYear() === start.getUTCFullYear() &&
+    end.getUTCMonth() === start.getUTCMonth() &&
+    end.getUTCDate() >= 28
+  ) {
+    return start.toLocaleDateString('en-IN', {
+      month: 'short',
+      timeZone: 'UTC',
+      year: 'numeric',
+    });
+  }
+
+  if (
+    start.getUTCDate() === 1 &&
+    start.getUTCMonth() === 0 &&
+    end.getUTCMonth() === 11 &&
+    end.getUTCDate() === 31
+  ) {
+    return `${start.getUTCFullYear()}`;
+  }
+
+  return `${start.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' })} - ${end.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+  })}`;
+}
+
 function groupTransactions(
   state: TransactionsLedgerState,
-  filter: TransactionFilter
+  filter: TransactionFilter,
+  options: TransactionsScreenOptions
 ): TransactionsScreenState['groups'] {
   const groupedTransactions = new Map<string, TransactionsScreenState['groups'][number]>();
-  const filteredTransactions =
-    filter === 'needs_review'
-      ? state.transactions.filter((transaction) => transaction.needsReview)
-      : state.transactions;
+  const filteredTransactions = filterTransactions(state, filter, options);
+  const referenceDate = options.asOf ?? filteredTransactions[0]?.postedAt ?? state.transactions[0]?.postedAt ?? new Date().toISOString();
 
   for (const transaction of [...filteredTransactions].sort(
     (left, right) => new Date(right.postedAt).getTime() - new Date(left.postedAt).getTime()
@@ -119,6 +211,7 @@ function groupTransactions(
     if (!existingGroup) {
       groupedTransactions.set(dateLabel, {
         dateLabel,
+        heading: readRelativeHeading(transaction.postedAt, referenceDate),
         totalAmount: transaction.amount,
         transactionCount: 1,
         transactions: [transactionWithCategory],
@@ -135,4 +228,80 @@ function groupTransactions(
   }
 
   return [...groupedTransactions.values()];
+}
+
+function filterTransactions(
+  state: TransactionsLedgerState,
+  filter: TransactionFilter,
+  options: TransactionsScreenOptions
+) {
+  const normalizedSearchQuery = options.searchQuery?.trim().toLowerCase() ?? '';
+  const transactionIds = options.transactionIds ? new Set(options.transactionIds) : null;
+  const hasExplicitEvidenceSet = transactionIds !== null && transactionIds.size > 0;
+
+  return state.transactions.filter((transaction) => {
+    if (filter === 'needs_review' && !transaction.needsReview) {
+      return false;
+    }
+
+    if (hasExplicitEvidenceSet && !transactionIds.has(transaction.id)) {
+      return false;
+    }
+
+    if (options.categoryId && transaction.categoryId !== options.categoryId) {
+      return false;
+    }
+
+    if (options.sourceType && options.sourceType !== 'all' && transaction.sourceType !== options.sourceType) {
+      return false;
+    }
+
+    if (options.ownerMemberId && transaction.ownerMemberId !== options.ownerMemberId) {
+      return false;
+    }
+
+    if (options.ownerScope && options.ownerScope !== 'all' && transaction.ownerScope !== options.ownerScope) {
+      return false;
+    }
+
+    if (options.startOn && readDateOnly(transaction.postedAt) < options.startOn) {
+      return false;
+    }
+
+    if (options.endOn && readDateOnly(transaction.postedAt) > options.endOn) {
+      return false;
+    }
+
+    if (normalizedSearchQuery.length > 0 && !transaction.merchant.toLowerCase().includes(normalizedSearchQuery)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function readDateOnly(isoDate: string) {
+  return isoDate.slice(0, 10);
+}
+
+function readRelativeHeading(isoDate: string, referenceDate: string) {
+  const transactionDate = startOfUtcDay(isoDate);
+  const relativeTo = startOfUtcDay(referenceDate);
+  const differenceInDays = Math.floor((relativeTo.getTime() - transactionDate.getTime()) / 86400000);
+
+  if (differenceInDays === 0) {
+    return 'Today';
+  }
+
+  if (differenceInDays === 1) {
+    return 'Yesterday';
+  }
+
+  return formatShortDate(isoDate);
+}
+
+function startOfUtcDay(isoDate: string) {
+  const date = new Date(isoDate);
+
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }

@@ -36,6 +36,7 @@ export function projectPhase1TransactionsToLedgerTransactions(
     merchant: transaction.merchantRaw,
     needsReview: transaction.needsReview,
     ownerDisplayName: null,
+    ownerMemberId: null,
     ownerScope: 'unknown',
     postedAt: transaction.postedAt ?? `${transaction.transactionDate}T08:00:00.000Z`,
     reviewReason: transaction.reviewReason ?? null,

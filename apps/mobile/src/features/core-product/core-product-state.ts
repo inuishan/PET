@@ -57,6 +57,7 @@ export type LedgerTransaction = {
   merchant: string;
   needsReview: boolean;
   ownerDisplayName: string | null;
+  ownerMemberId: string | null;
   ownerScope: 'member' | 'shared' | 'unknown';
   postedAt: string;
   reviewReason: string | null;
@@ -162,6 +163,7 @@ export function createMockCoreProductState(): CoreProductState {
         merchant: 'Amazon Marketplace',
         needsReview: false,
         ownerDisplayName: null,
+        ownerMemberId: null,
         ownerScope: 'unknown',
         postedAt: '2026-03-24T08:00:00.000Z',
         reviewReason: null,
@@ -180,6 +182,7 @@ export function createMockCoreProductState(): CoreProductState {
         merchant: 'Uber India',
         needsReview: true,
         ownerDisplayName: null,
+        ownerMemberId: null,
         ownerScope: 'unknown',
         postedAt: '2026-03-25T09:30:00.000Z',
         reviewReason: 'Merchant alias confidence is below the transport threshold.',
@@ -198,6 +201,7 @@ export function createMockCoreProductState(): CoreProductState {
         merchant: 'Swiggy',
         needsReview: false,
         ownerDisplayName: null,
+        ownerMemberId: null,
         ownerScope: 'unknown',
         postedAt: '2026-03-25T20:15:00.000Z',
         reviewReason: null,
@@ -216,6 +220,7 @@ export function createMockCoreProductState(): CoreProductState {
         merchant: 'Google One',
         needsReview: true,
         ownerDisplayName: null,
+        ownerMemberId: null,
         ownerScope: 'unknown',
         postedAt: '2026-03-26T13:05:00.000Z',
         reviewReason: 'The parser could not distinguish between subscriptions and utilities.',
@@ -234,6 +239,7 @@ export function createMockCoreProductState(): CoreProductState {
         merchant: 'Nature Basket',
         needsReview: false,
         ownerDisplayName: null,
+        ownerMemberId: null,
         ownerScope: 'unknown',
         postedAt: '2026-03-26T19:00:00.000Z',
         reviewReason: null,
@@ -252,6 +258,7 @@ export function createMockCoreProductState(): CoreProductState {
         merchant: 'Spotify',
         needsReview: false,
         ownerDisplayName: null,
+        ownerMemberId: null,
         ownerScope: 'unknown',
         postedAt: '2026-03-27T07:20:00.000Z',
         reviewReason: null,

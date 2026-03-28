@@ -48,7 +48,7 @@ type TransactionRow = {
   merchant_raw: string;
   metadata: TransactionMetadata | null;
   needs_review: boolean;
-  owner_member?: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
+  owner_member?: { display_name?: string | null; id?: string | null } | Array<{ display_name?: string | null; id?: string | null }> | null;
   owner_scope: 'member' | 'shared' | 'unknown';
   posted_at?: string | null;
   review_reason?: string | null;
@@ -103,7 +103,7 @@ export async function loadTransactionsSnapshot(
     client
       .from('transactions')
       .select(
-        'id, category_id, merchant_raw, amount, transaction_date, posted_at, needs_review, review_reason, confidence, metadata, source_type, source_reference, owner_scope, owner_member:household_members(display_name), statement_uploads(card_name, bank_name, billing_period_end)'
+        'id, category_id, merchant_raw, amount, transaction_date, posted_at, needs_review, review_reason, confidence, metadata, source_type, source_reference, owner_scope, owner_member:household_members(id, display_name), statement_uploads(card_name, bank_name, billing_period_end)'
       )
       .eq('household_id', householdId)
       .order('transaction_date', { ascending: false })
@@ -184,6 +184,7 @@ function mapTransactionRow(transaction: TransactionRow, uncategorizedCategoryId:
     merchant: transaction.merchant_raw,
     needsReview: transaction.needs_review,
     ownerDisplayName: readOwnerDisplayName(transaction.owner_member),
+    ownerMemberId: readOwnerMemberId(transaction.owner_member),
     ownerScope: transaction.owner_scope,
     postedAt: normalizeIsoDate(transaction.posted_at ?? transaction.transaction_date),
     reviewReason: transaction.review_reason ?? null,
@@ -308,6 +309,14 @@ function readOwnerDisplayName(input: TransactionRow['owner_member']) {
   return input?.display_name?.trim() || null;
 }
 
+function readOwnerMemberId(input: TransactionRow['owner_member']) {
+  if (Array.isArray(input)) {
+    return readOwnerMemberId(input[0] ?? null);
+  }
+
+  return input?.id?.trim() || null;
+}
+
 function readOwnerMember(input: unknown): TransactionRow['owner_member'] {
   if (input === null || input === undefined) {
     return null;
@@ -319,6 +328,7 @@ function readOwnerMember(input: unknown): TransactionRow['owner_member'] {
 
       return {
         display_name: readNullableString(record.display_name, 'display_name'),
+        id: readNullableString(record.id, 'id'),
       };
     });
   }
@@ -327,6 +337,7 @@ function readOwnerMember(input: unknown): TransactionRow['owner_member'] {
 
   return {
     display_name: readNullableString(record.display_name, 'display_name'),
+    id: readNullableString(record.id, 'id'),
   };
 }
 
