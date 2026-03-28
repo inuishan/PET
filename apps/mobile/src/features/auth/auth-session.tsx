@@ -43,6 +43,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     async function restoreSession() {
       const sessionResponse = await supabase.auth.getSession();
+      console.log('[auth-session] restoreSession result', {
+        error: sessionResponse.error?.message ?? null,
+        hasSession: Boolean(sessionResponse.data.session),
+        userId: sessionResponse.data.session?.user?.id ?? null,
+      });
 
       if (!isActive) {
         return;
@@ -66,10 +71,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      console.log('[auth-session] onAuthStateChange', {
+        event,
+        hasSession: Boolean(nextSession),
+        userId: nextSession?.user?.id ?? null,
+      });
       void buildAppSessionFromAuthSession(nextSession, (userId) => loadHouseholdState(supabase, userId)).then(
         (restoredSession) => {
           if (isActive) {
+            console.log('[auth-session] hydrated session after auth state change', {
+              authStatus: restoredSession.status,
+              householdStatus: restoredSession.household.status,
+              userId: restoredSession.userId,
+            });
             setSession(restoredSession);
           }
         }
@@ -83,9 +98,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [supabase]);
 
   async function startGoogleSignIn(): Promise<SignInResult> {
+    console.log('[auth-session] startGoogleSignIn invoked');
     return startGoogleOAuthSignIn({
       exchangeCodeForSession: (code) => supabase.auth.exchangeCodeForSession(code),
       openAuthSession: (startUrl, returnUrl) => WebBrowser.openAuthSessionAsync(startUrl, returnUrl),
+      setSession: (input) => supabase.auth.setSession(input),
       signInWithOAuth: (input) => supabase.auth.signInWithOAuth(input),
     });
   }

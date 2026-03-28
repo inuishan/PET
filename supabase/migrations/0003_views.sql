@@ -131,6 +131,7 @@ as $$
       on transactions.household_id = target_household_id
      and transactions.transaction_date >= month_window.month_start
      and transactions.transaction_date < month_window.next_month_start
+    group by month_window.month_start
   ),
   categories as (
     select coalesce(

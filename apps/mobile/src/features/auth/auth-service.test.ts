@@ -1,10 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('expo-linking', () => ({
+  createURL: (path: string) => `mobile://${path}`,
+}));
+
+vi.mock('expo-web-browser', () => ({
+  maybeCompleteAuthSession: vi.fn(),
+}));
+
 import {
   buildAppSessionFromAuthSession,
+  completeGoogleAuthCodeExchange,
+  completeGoogleAuthRedirectSession,
   createGoogleAuthRedirectUrl,
   createLoadingAppSession,
   createSignedOutAppSession,
+  extractGoogleAuthCode,
+  extractGoogleAuthTokens,
   GOOGLE_SIGN_IN_CANCELLED_MESSAGE,
   GOOGLE_SIGN_IN_MISSING_CODE_MESSAGE,
   GOOGLE_SIGN_IN_MISSING_URL_MESSAGE,
@@ -54,6 +66,92 @@ describe('createSignedOutAppSession', () => {
 describe('createGoogleAuthRedirectUrl', () => {
   it('builds the callback route used for Expo deep linking', () => {
     expect(createGoogleAuthRedirectUrl((path) => `mobile://${path}`)).toBe('mobile:///auth/callback');
+  });
+});
+
+describe('extractGoogleAuthCode', () => {
+  it('reads the OAuth code from the callback URL', () => {
+    expect(extractGoogleAuthCode('mobile://auth/callback?code=pkce-code')).toBe('pkce-code');
+  });
+});
+
+describe('extractGoogleAuthTokens', () => {
+  it('reads access and refresh tokens from the callback hash fragment', () => {
+    expect(
+      extractGoogleAuthTokens(
+        'mobile://auth/callback#access_token=access-token&refresh_token=refresh-token&token_type=bearer'
+      )
+    ).toEqual({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+    });
+  });
+});
+
+describe('completeGoogleAuthCodeExchange', () => {
+  it('returns a clear error when the callback does not include an authorization code', async () => {
+    await expect(completeGoogleAuthCodeExchange(null, vi.fn())).resolves.toEqual({
+      message: GOOGLE_SIGN_IN_MISSING_CODE_MESSAGE,
+      ok: false,
+    });
+  });
+
+  it('exchanges the returned code for a Supabase session', async () => {
+    const exchangeCodeForSession = vi.fn().mockResolvedValue({
+      error: null,
+    });
+
+    await expect(completeGoogleAuthCodeExchange('pkce-code', exchangeCodeForSession)).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(exchangeCodeForSession).toHaveBeenCalledWith('pkce-code');
+  });
+});
+
+describe('completeGoogleAuthRedirectSession', () => {
+  it('exchanges a returned PKCE code for a Supabase session', async () => {
+    const exchangeCodeForSession = vi.fn().mockResolvedValue({
+      error: null,
+    });
+    const setSession = vi.fn();
+
+    await expect(
+      completeGoogleAuthRedirectSession('mobile://auth/callback?code=pkce-code', {
+        exchangeCodeForSession,
+        setSession,
+      })
+    ).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(exchangeCodeForSession).toHaveBeenCalledWith('pkce-code');
+    expect(setSession).not.toHaveBeenCalled();
+  });
+
+  it('sets the Supabase session when the callback returns fragment tokens', async () => {
+    const exchangeCodeForSession = vi.fn();
+    const setSession = vi.fn().mockResolvedValue({
+      error: null,
+    });
+
+    await expect(
+      completeGoogleAuthRedirectSession(
+        'mobile://auth/callback#access_token=access-token&refresh_token=refresh-token',
+        {
+          exchangeCodeForSession,
+          setSession,
+        }
+      )
+    ).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(setSession).toHaveBeenCalledWith({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+    });
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
   });
 });
 
@@ -152,6 +250,7 @@ describe('startGoogleOAuthSignIn', () => {
         createRedirectUrl: () => 'mobile://auth/callback',
         exchangeCodeForSession,
         openAuthSession,
+        setSession: vi.fn(),
         signInWithOAuth,
       })
     ).resolves.toEqual({ ok: true });
@@ -179,6 +278,7 @@ describe('startGoogleOAuthSignIn', () => {
       startGoogleOAuthSignIn({
         exchangeCodeForSession: vi.fn(),
         openAuthSession: vi.fn(),
+        setSession: vi.fn(),
         signInWithOAuth: vi.fn().mockResolvedValue({
           data: {
             url: null,
@@ -200,6 +300,7 @@ describe('startGoogleOAuthSignIn', () => {
           type: 'cancel',
           url: null,
         }),
+        setSession: vi.fn(),
         signInWithOAuth: vi.fn().mockResolvedValue({
           data: {
             url: 'https://supabase.example.com/auth?provider=google',
@@ -221,6 +322,7 @@ describe('startGoogleOAuthSignIn', () => {
           type: 'success',
           url: 'mobile://auth/callback',
         }),
+        setSession: vi.fn(),
         signInWithOAuth: vi.fn().mockResolvedValue({
           data: {
             url: 'https://supabase.example.com/auth?provider=google',
@@ -231,6 +333,36 @@ describe('startGoogleOAuthSignIn', () => {
     ).resolves.toEqual({
       message: GOOGLE_SIGN_IN_MISSING_CODE_MESSAGE,
       ok: false,
+    });
+  });
+
+  it('accepts fragment-token callbacks and sets the Supabase session', async () => {
+    const setSession = vi.fn().mockResolvedValue({
+      error: null,
+    });
+
+    await expect(
+      startGoogleOAuthSignIn({
+        exchangeCodeForSession: vi.fn(),
+        openAuthSession: vi.fn().mockResolvedValue({
+          type: 'success',
+          url: 'mobile://auth/callback#access_token=access-token&refresh_token=refresh-token',
+        }),
+        setSession,
+        signInWithOAuth: vi.fn().mockResolvedValue({
+          data: {
+            url: 'https://supabase.example.com/auth?provider=google',
+          },
+          error: null,
+        }),
+      })
+    ).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(setSession).toHaveBeenCalledWith({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
     });
   });
 });

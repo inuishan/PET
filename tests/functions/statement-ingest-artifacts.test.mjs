@@ -11,7 +11,7 @@ const migrationPath = path.join(
   '..',
   'supabase',
   'migrations',
-  '0004_statement_ingest_rpc.sql',
+  '0011_statement_ingest_rpc.sql',
 );
 const workflowPath = path.join(
   currentDirectory,

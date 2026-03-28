@@ -81,6 +81,7 @@ test('0003_views.sql adds month-to-date summaries and dashboard helper functions
   assert.match(migration, /create or replace view public\.household_statement_sync_status/i);
   assert.match(migration, /create or replace function public\.get_household_dashboard_summary/i);
   assert.match(migration, /security_invoker/i);
+  assert.match(migration, /group by month_window\.month_start/i);
 });
 
 test('0004_household_invites.sql adds invite-backed onboarding helpers', () => {
