@@ -339,10 +339,16 @@ test('generateAnalyticsOutputs derives stable insights and a richer report from 
   assert.equal(categoryPattern.generatedFrom.metrics.weekendShare, 90);
 
   assert.equal(result.report.reportType, 'monthly');
-  assert.equal(result.report.payload.sections.length, 4);
+  assert.equal(result.report.payload.sections.length, 5);
   assert.deepEqual(
     result.report.payload.sections.map((section) => section.id),
-    ['what-changed', 'savings-opportunities', 'watch-list', 'next-actions'],
+    [
+      'major-spend-shifts',
+      'savings-opportunities',
+      'recurring-charge-findings',
+      'unusual-patterns',
+      'recommended-next-actions',
+    ],
   );
   assert.ok(result.report.payload.sections.every((section) => section.insightIds.length > 0));
 });

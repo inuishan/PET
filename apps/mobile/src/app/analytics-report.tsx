@@ -4,15 +4,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuthSession } from '@/features/auth/auth-session';
-import { formatCurrency } from '@/features/core-product/core-product-formatting';
+import { buildAnalyticsReportScreenState } from '@/features/analytics/analytics-report-model';
 import { loadAnalyticsReport } from '@/features/analytics/analytics-service';
+import { createTransactionsDrilldownParams, type TransactionsDrilldown } from '@/features/transactions/transactions-drilldown';
 import { getSupabaseClient } from '@/lib/supabase';
-
-const dateFormatter = new Intl.DateTimeFormat('en-IN', {
-  month: 'long',
-  timeZone: 'UTC',
-  year: 'numeric',
-});
 
 export default function AnalyticsReportScreen() {
   const { session } = useAuthSession();
@@ -81,35 +76,127 @@ export default function AnalyticsReportScreen() {
   }
 
   const report = reportQuery.data;
+  const screenState = buildAnalyticsReportScreenState(report);
+
+  function openAnalytics() {
+    router.replace('/(tabs)/analytics');
+  }
+
+  function openTransactions(drilldown: TransactionsDrilldown | null) {
+    if (!drilldown) {
+      openAnalytics();
+      return;
+    }
+
+    router.push({
+      params: createTransactionsDrilldownParams(drilldown),
+      pathname: '/(tabs)/transactions',
+    });
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
         <Text style={styles.heroEyebrow}>Deep analysis</Text>
-        <Text style={styles.heroTitle}>{report.title}</Text>
-        <Text style={styles.heroMeta}>{formatReportPeriod(report.periodStart, report.periodEnd)}</Text>
-        <Text style={styles.heroBody}>{report.summary}</Text>
+        <Text style={styles.heroTitle}>{screenState.hero.title}</Text>
+        <Text style={styles.heroMeta}>{screenState.hero.periodLabel}</Text>
+        <Text style={styles.heroBody}>{screenState.hero.summary}</Text>
+        <View style={styles.heroChipRow}>
+          <View style={styles.heroChip}>
+            <Text style={styles.heroChipText}>{screenState.hero.generatedLabel}</Text>
+          </View>
+          <View style={styles.heroChip}>
+            <Text style={styles.heroChipText}>{screenState.hero.comparisonLabel}</Text>
+          </View>
+        </View>
         <View style={styles.comparisonRow}>
-          <View style={styles.comparisonCard}>
-            <Text style={styles.comparisonLabel}>Delta vs prior</Text>
-            <Text style={styles.comparisonValue}>
-              {report.comparison.deltaPercentage === null ? 'No prior data' : `${report.comparison.deltaPercentage.toFixed(1)}%`}
-            </Text>
-          </View>
-          <View style={styles.comparisonCard}>
-            <Text style={styles.comparisonLabel}>Previous spend</Text>
-            <Text style={styles.comparisonValue}>{formatCurrency(report.comparison.previousSpend)}</Text>
-          </View>
+          {screenState.hero.metrics.map((metric) => (
+            <View key={metric.id} style={styles.comparisonCard}>
+              <Text style={styles.comparisonLabel}>{metric.label}</Text>
+              <Text style={styles.comparisonValue}>{metric.value}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.heroActionRow}>
+          <Pressable accessibilityRole="button" onPress={openAnalytics} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>{screenState.navigation.analyticsLabel}</Text>
+          </Pressable>
+          {screenState.summaryHighlights[0]?.drilldown ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => openTransactions(screenState.summaryHighlights[0]?.drilldown ?? null)}
+              style={styles.secondaryHeroButton}>
+              <Text style={styles.secondaryHeroButtonText}>Review top evidence</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      {report.payload.sections.map((section) => (
+      {screenState.summaryHighlights.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Summary anchors</Text>
+          {screenState.summaryHighlights.map((insight) => (
+            <View key={insight.id} style={styles.insightCard}>
+              <Text style={styles.insightEyebrow}>{insight.eyebrow}</Text>
+              <Text style={styles.insightTitle}>{insight.title}</Text>
+              <Text style={styles.cardBody}>{insight.body}</Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaChip}>{insight.evidenceLabel}</Text>
+                {insight.impactLabel ? <Text style={styles.metaChip}>{insight.impactLabel}</Text> : null}
+              </View>
+              {insight.drilldown ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => openTransactions(insight.drilldown)}
+                  style={styles.inlineButton}>
+                  <Text style={styles.inlineButtonText}>Open matching transactions</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {screenState.sections.map((section) => (
         <View key={section.id} style={styles.card}>
+          <Text style={styles.sectionEyebrow}>Report section</Text>
           <Text style={styles.sectionTitle}>{section.title}</Text>
           <Text style={styles.cardBody}>{section.body}</Text>
-          <Text style={styles.sectionMeta}>
-            {section.insightIds.length} linked insight{section.insightIds.length === 1 ? '' : 's'}
-          </Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaChip}>{section.insightCountLabel}</Text>
+            <Text style={styles.metaChip}>{section.evidenceLabel}</Text>
+            {section.impactLabel ? <Text style={styles.metaChip}>{section.impactLabel}</Text> : null}
+          </View>
+          <View style={styles.actionRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => openTransactions(section.primaryDrilldown)}
+              style={styles.inlineButton}>
+              <Text style={styles.inlineButtonText}>{section.primaryActionLabel}</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={openAnalytics} style={styles.ghostButton}>
+              <Text style={styles.ghostButtonText}>{screenState.navigation.analyticsLabel}</Text>
+            </Pressable>
+          </View>
+          {section.insights.map((insight) => (
+            <View key={insight.id} style={styles.supportingCard}>
+              <Text style={styles.insightEyebrow}>{insight.eyebrow}</Text>
+              <Text style={styles.supportingTitle}>{insight.title}</Text>
+              <Text style={styles.cardBody}>{insight.body}</Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaChip}>{insight.evidenceLabel}</Text>
+                {insight.impactLabel ? <Text style={styles.metaChip}>{insight.impactLabel}</Text> : null}
+              </View>
+              {insight.drilldown ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => openTransactions(insight.drilldown)}
+                  style={styles.supportingButton}>
+                  <Text style={styles.supportingButtonText}>Open evidence set</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ))}
         </View>
       ))}
 
@@ -120,24 +207,13 @@ export default function AnalyticsReportScreen() {
   );
 }
 
-function formatReportPeriod(periodStart: string, periodEnd: string) {
-  const start = new Date(`${periodStart}T00:00:00.000Z`);
-  const end = new Date(`${periodEnd}T00:00:00.000Z`);
-
-  if (start.getUTCFullYear() === end.getUTCFullYear() && start.getUTCMonth() === end.getUTCMonth()) {
-    return dateFormatter.format(start);
-  }
-
-  return `${periodStart} - ${periodEnd}`;
-}
-
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
     borderColor: '#dce3eb',
     borderRadius: 28,
     borderWidth: 1,
-    gap: 10,
+    gap: 12,
     padding: 22,
   },
   cardBody: {
@@ -178,11 +254,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
+  heroChip: {
+    backgroundColor: '#12233d',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  heroChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  heroChipText: {
+    color: '#85f8c4',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   heroCard: {
     backgroundColor: '#000e24',
     borderRadius: 32,
     gap: 10,
     padding: 24,
+  },
+  heroActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   heroEyebrow: {
     color: '#85f8c4',
@@ -212,6 +309,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+  secondaryHeroButton: {
+    borderColor: '#2c4771',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  secondaryHeroButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   screen: {
     backgroundColor: '#f7f9fb',
     flex: 1,
@@ -229,14 +338,109 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
-  sectionMeta: {
-    color: '#7a8596',
+  section: {
+    gap: 12,
+  },
+  sectionEyebrow: {
+    color: '#006c4a',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  ghostButton: {
+    borderColor: '#dce3eb',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  ghostButtonText: {
+    color: '#000e24',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inlineButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#000e24',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  inlineButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  insightCard: {
+    backgroundColor: '#eef2f6',
+    borderLeftColor: '#006c4a',
+    borderLeftWidth: 4,
+    borderRadius: 24,
+    gap: 8,
+    padding: 18,
+  },
+  insightEyebrow: {
+    color: '#006c4a',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  insightTitle: {
+    color: '#000e24',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  metaChip: {
+    backgroundColor: '#edf1f5',
+    borderRadius: 999,
+    color: '#445165',
     fontSize: 12,
     fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   sectionTitle: {
     color: '#000e24',
     fontSize: 20,
+    fontWeight: '800',
+  },
+  supportingButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#ffffff',
+    borderColor: '#dce3eb',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  supportingButtonText: {
+    color: '#000e24',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  supportingCard: {
+    backgroundColor: '#f7f9fb',
+    borderColor: '#e2e8f0',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 8,
+    padding: 18,
+  },
+  supportingTitle: {
+    color: '#000e24',
+    fontSize: 18,
     fontWeight: '800',
   },
 });

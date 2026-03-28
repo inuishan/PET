@@ -552,13 +552,15 @@ function buildReport(input: {
   reportType: AnalyticsReportType;
 }) {
   const summaryInsightIds = input.insights.slice(0, 2).map((insight) => insight.id);
-  const whatChangedInsights = input.insights.filter((insight) => insight.type === 'unusual_spike' || insight.type === 'overspending');
-  const savingsInsights = input.insights.filter((insight) =>
-    insight.type === 'savings_opportunity' || insight.type === 'duplicate_subscription' || insight.type === 'category_pattern'
+  const spendShiftInsights = input.insights.filter((insight) =>
+    insight.type === 'overspending' || insight.type === 'unusual_spike'
   );
-  const watchListInsights = input.insights.filter((insight) =>
-    insight.type === 'unusual_spike' || insight.type === 'duplicate_subscription'
+  const savingsInsights = input.insights.filter((insight) => insight.type === 'savings_opportunity');
+  const recurringChargeInsights = input.insights.filter((insight) =>
+    insight.type === 'duplicate_subscription' || insight.type === 'recurring_charge'
   );
+  const unusualPatternInsights = input.insights.filter((insight) => insight.type === 'category_pattern');
+  const nextActionInsights = input.insights.slice(0, Math.min(input.insights.length, 3));
 
   return {
     comparison: input.comparison,
@@ -567,34 +569,44 @@ function buildReport(input: {
     payload: {
       sections: [
         buildReportSection(
-          'what-changed',
-          'What changed',
-          whatChangedInsights.length > 0
-            ? whatChangedInsights.map((insight) => insight.summary).join(' ')
-            : 'Household spend stayed within normal ranges relative to the comparison window.',
-          whatChangedInsights,
+          'major-spend-shifts',
+          'Major spend shifts',
+          spendShiftInsights.length > 0
+            ? spendShiftInsights.map((insight) => insight.summary).join(' ')
+            : 'No major spend shift crossed the report threshold in this period.',
+          spendShiftInsights,
         ),
         buildReportSection(
           'savings-opportunities',
           'Savings opportunities',
           savingsInsights.length > 0
             ? savingsInsights.map((insight) => insight.recommendation).join(' ')
-            : 'No high-confidence savings opportunities crossed the deterministic threshold this period.',
+            : 'No high-confidence savings opportunity exceeded the current recommendation threshold.',
           savingsInsights,
         ),
         buildReportSection(
-          'watch-list',
-          'Watch list',
-          watchListInsights.length > 0
-            ? watchListInsights.map((insight) => insight.summary).join(' ')
-            : 'No unusual merchants or duplicate subscription patterns need extra review right now.',
-          watchListInsights.length > 0 ? watchListInsights : input.insights.slice(0, 1),
+          'recurring-charge-findings',
+          'Recurring-charge findings',
+          recurringChargeInsights.length > 0
+            ? recurringChargeInsights.map((insight) => insight.summary).join(' ')
+            : 'No recurring-charge finding needs action beyond the current review threshold.',
+          recurringChargeInsights,
         ),
         buildReportSection(
-          'next-actions',
-          'Next actions',
-          input.insights.slice(0, 3).map((insight) => insight.recommendation).join(' '),
-          input.insights.slice(0, Math.min(input.insights.length, 3)),
+          'unusual-patterns',
+          'Unusual patterns',
+          unusualPatternInsights.length > 0
+            ? unusualPatternInsights.map((insight) => insight.summary).join(' ')
+            : 'No unusual behavior pattern stood out strongly enough to call out in this cycle.',
+          unusualPatternInsights,
+        ),
+        buildReportSection(
+          'recommended-next-actions',
+          'Recommended next actions',
+          nextActionInsights.length > 0
+            ? nextActionInsights.map((insight) => insight.recommendation).join(' ')
+            : 'No next action was generated for this report yet.',
+          nextActionInsights,
         ),
       ],
       summaryInsightIds,
