@@ -67,8 +67,14 @@ test('Phase 1 ledger projection preserves review fields from ingested rows', () 
     id: 'phase-1-ingested-1',
     merchant: 'Google One',
     needsReview: true,
+    ownerDisplayName: null,
+    ownerScope: 'unknown',
     postedAt: '2026-04-20T08:00:00.000Z',
     reviewReason: 'The parser could not distinguish between subscriptions and utilities.',
+    reviewReasons: [],
+    sourceContextLabel: 'HDFC Apr 2026',
+    sourceLabel: 'HDFC Regalia Gold',
+    sourceType: 'credit_card_statement',
     statementLabel: 'HDFC Apr 2026',
   });
 });

@@ -99,16 +99,58 @@ describe('buildSettingsSnapshot', () => {
             notificationType: 'statement_parse_failure',
           },
         ],
+        householdMembers: [
+          {
+            displayName: 'Spouse',
+            id: 'member-2',
+          },
+          {
+            displayName: 'Ishan',
+            id: 'member-1',
+          },
+        ],
+        whatsappParticipants: [
+          {
+            approvedAt: '2026-03-27T07:30:00.000Z',
+            displayName: 'Primary sender',
+            id: 'participant-1',
+            memberDisplayName: 'Ishan',
+            memberId: 'member-1',
+            phoneE164: '+919876543210',
+          },
+        ],
+        whatsappSource: {
+          acknowledgementStatusLabel: 'Disabled until replies are configured',
+          approvedParticipantCount: 1,
+          failedCaptureCount: 0,
+          healthBody: 'Ready for the first approved WhatsApp message.',
+          lastCaptureLabel: 'No approved participant traffic yet',
+          reviewCaptureCount: 0,
+          setupLabel: '1 approved participant',
+          status: 'healthy',
+        },
       }
     );
 
     expect(snapshot.syncHealth.status).toBe('healthy');
     expect(snapshot.syncHealth.lastAttemptLabel).toBe('No sync attempts yet');
     expect(snapshot.syncHealth.lastSuccessfulSyncLabel).toBe('No statements synced yet');
+    expect(snapshot.householdMembers.map((member) => member.displayName)).toEqual(['Ishan', 'Spouse']);
     expect(snapshot.notificationPreferences).toHaveLength(3);
     expect(snapshot.notificationPreferences.find((preference) => preference.id === 'push-parse-failures')).toMatchObject({
       enabled: false,
       notificationType: 'statement_parse_failure',
+    });
+    expect(snapshot.whatsappSource).toMatchObject({
+      acknowledgementStatusLabel: 'Disabled until replies are configured',
+      approvedParticipantCount: 1,
+      setupLabel: '1 approved participant',
+      status: 'healthy',
+    });
+    expect(snapshot.whatsappParticipants[0]).toMatchObject({
+      displayName: 'Primary sender',
+      memberDisplayName: 'Ishan',
+      phoneE164: '+919876543210',
     });
   });
 });

@@ -29,6 +29,43 @@ describe('buildTransactionsScreenState', () => {
       'txn-002',
     ]);
   });
+
+  it('projects source attribution and UPI review counts without splitting the ledger view', () => {
+    const state = createMockCoreProductState();
+    const screenState = buildTransactionsScreenState(
+      {
+        ...state,
+        transactions: [
+          {
+            ...state.transactions[1],
+            id: 'txn-upi-1',
+            merchant: 'Uber',
+            ownerDisplayName: 'Spouse',
+            ownerScope: 'member',
+            reviewReason: 'owner_conflict',
+            reviewReasons: ['owner_conflict'],
+            sourceContextLabel: 'Meta test number',
+            sourceLabel: 'WhatsApp UPI',
+            sourceType: 'upi_whatsapp',
+          },
+          ...state.transactions,
+        ],
+      },
+      'needs_review'
+    );
+
+    expect(screenState.sourceSummary).toEqual({
+      creditCardCount: 6,
+      upiCount: 1,
+      upiReviewCount: 1,
+    });
+    expect(screenState.groups.flatMap((group) => group.transactions)[0]).toMatchObject({
+      id: 'txn-upi-1',
+      ownerDisplayName: 'Spouse',
+      sourceBadge: 'UPI',
+      sourceLabel: 'WhatsApp UPI',
+    });
+  });
 });
 
 describe('reassignTransactionCategory', () => {

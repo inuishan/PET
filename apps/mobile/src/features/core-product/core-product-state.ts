@@ -36,17 +36,35 @@ export type SyncHealth = {
   status: SyncStatus;
 };
 
+export type LedgerSourceType = 'credit_card_statement' | 'upi_whatsapp';
+
+export type WhatsAppSourceStatus = SyncStatus | 'needs_setup';
+
+export type WhatsAppSourceHealth = {
+  approvedParticipantCount: number;
+  failedCaptureCount: number;
+  lastCaptureAt: string | null;
+  reviewCaptureCount: number;
+  status: WhatsAppSourceStatus;
+};
+
 export type LedgerTransaction = {
   amount: number;
-  cardLabel: string;
+  cardLabel?: string;
   categoryId: string;
   confidence: number;
   id: string;
   merchant: string;
   needsReview: boolean;
+  ownerDisplayName: string | null;
+  ownerScope: 'member' | 'shared' | 'unknown';
   postedAt: string;
   reviewReason: string | null;
-  statementLabel: string;
+  reviewReasons: string[];
+  sourceContextLabel: string;
+  sourceLabel: string;
+  sourceType: LedgerSourceType;
+  statementLabel?: string;
 };
 
 export type CoreProductState = {
@@ -56,6 +74,7 @@ export type CoreProductState = {
   parserProfiles: ParserProfile[];
   sync: SyncHealth;
   transactions: LedgerTransaction[];
+  whatsappSource: WhatsAppSourceHealth;
 };
 
 export function createMockCoreProductState(): CoreProductState {
@@ -127,77 +146,120 @@ export function createMockCoreProductState(): CoreProductState {
       pendingStatementCount: 1,
       status: 'degraded',
     },
+    whatsappSource: {
+      approvedParticipantCount: 1,
+      failedCaptureCount: 0,
+      lastCaptureAt: null,
+      reviewCaptureCount: 0,
+      status: 'healthy',
+    },
     transactions: [
       {
         amount: 12450,
-        cardLabel: 'ICICI Amazon Pay',
         categoryId: 'shopping',
         confidence: 0.99,
         id: 'txn-001',
         merchant: 'Amazon Marketplace',
         needsReview: false,
+        ownerDisplayName: null,
+        ownerScope: 'unknown',
         postedAt: '2026-03-24T08:00:00.000Z',
         reviewReason: null,
+        reviewReasons: [],
+        cardLabel: 'ICICI Amazon Pay',
+        sourceContextLabel: 'ICICI Mar 2026',
+        sourceLabel: 'ICICI Amazon Pay',
+        sourceType: 'credit_card_statement',
         statementLabel: 'ICICI Mar 2026',
       },
       {
         amount: 3200,
-        cardLabel: 'HDFC Regalia Gold',
         categoryId: 'transport',
         confidence: 0.58,
         id: 'txn-002',
         merchant: 'Uber India',
         needsReview: true,
+        ownerDisplayName: null,
+        ownerScope: 'unknown',
         postedAt: '2026-03-25T09:30:00.000Z',
         reviewReason: 'Merchant alias confidence is below the transport threshold.',
+        reviewReasons: [],
+        cardLabel: 'HDFC Regalia Gold',
+        sourceContextLabel: 'HDFC Mar 2026',
+        sourceLabel: 'HDFC Regalia Gold',
+        sourceType: 'credit_card_statement',
         statementLabel: 'HDFC Mar 2026',
       },
       {
         amount: 1899,
-        cardLabel: 'Amex MRCC',
         categoryId: 'food-dining',
         confidence: 0.93,
         id: 'txn-003',
         merchant: 'Swiggy',
         needsReview: false,
+        ownerDisplayName: null,
+        ownerScope: 'unknown',
         postedAt: '2026-03-25T20:15:00.000Z',
         reviewReason: null,
+        reviewReasons: [],
+        cardLabel: 'Amex MRCC',
+        sourceContextLabel: 'Amex Mar 2026',
+        sourceLabel: 'Amex MRCC',
+        sourceType: 'credit_card_statement',
         statementLabel: 'Amex Mar 2026',
       },
       {
         amount: 879,
-        cardLabel: 'HDFC Regalia Gold',
         categoryId: 'uncategorized',
         confidence: 0.44,
         id: 'txn-004',
         merchant: 'Google One',
         needsReview: true,
+        ownerDisplayName: null,
+        ownerScope: 'unknown',
         postedAt: '2026-03-26T13:05:00.000Z',
         reviewReason: 'The parser could not distinguish between subscriptions and utilities.',
+        reviewReasons: [],
+        cardLabel: 'HDFC Regalia Gold',
+        sourceContextLabel: 'HDFC Mar 2026',
+        sourceLabel: 'HDFC Regalia Gold',
+        sourceType: 'credit_card_statement',
         statementLabel: 'HDFC Mar 2026',
       },
       {
         amount: 5400,
-        cardLabel: 'ICICI Amazon Pay',
         categoryId: 'groceries',
         confidence: 0.9,
         id: 'txn-005',
         merchant: 'Nature Basket',
         needsReview: false,
+        ownerDisplayName: null,
+        ownerScope: 'unknown',
         postedAt: '2026-03-26T19:00:00.000Z',
         reviewReason: null,
+        reviewReasons: [],
+        cardLabel: 'ICICI Amazon Pay',
+        sourceContextLabel: 'ICICI Mar 2026',
+        sourceLabel: 'ICICI Amazon Pay',
+        sourceType: 'credit_card_statement',
         statementLabel: 'ICICI Mar 2026',
       },
       {
         amount: 1299,
-        cardLabel: 'Amex MRCC',
         categoryId: 'subscriptions',
         confidence: 0.96,
         id: 'txn-006',
         merchant: 'Spotify',
         needsReview: false,
+        ownerDisplayName: null,
+        ownerScope: 'unknown',
         postedAt: '2026-03-27T07:20:00.000Z',
         reviewReason: null,
+        reviewReasons: [],
+        cardLabel: 'Amex MRCC',
+        sourceContextLabel: 'Amex Mar 2026',
+        sourceLabel: 'Amex MRCC',
+        sourceType: 'credit_card_statement',
         statementLabel: 'Amex Mar 2026',
       },
     ],

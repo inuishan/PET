@@ -15,19 +15,29 @@ export type TransactionsScreenState = {
     transactionCount: number;
     transactions: Array<{
       amount: number;
-      cardLabel: string;
       categoryId: string;
       categoryName: string;
       confidence: number;
       id: string;
       merchant: string;
       needsReview: boolean;
+      ownerDisplayName: string | null;
+      ownerScope: 'member' | 'shared' | 'unknown';
       postedAt: string;
       reviewReason: string | null;
-      statementLabel: string;
+      reviewReasons: string[];
+      sourceBadge: 'Card' | 'UPI';
+      sourceContextLabel: string;
+      sourceLabel: string;
+      sourceType: 'credit_card_statement' | 'upi_whatsapp';
     }>;
   }>;
   reviewQueueCount: number;
+  sourceSummary: {
+    creditCardCount: number;
+    upiCount: number;
+    upiReviewCount: number;
+  };
 };
 
 export function buildTransactionsScreenState(
@@ -41,6 +51,13 @@ export function buildTransactionsScreenState(
     })),
     groups: groupTransactions(state, filter),
     reviewQueueCount: state.transactions.filter((transaction) => transaction.needsReview).length,
+    sourceSummary: {
+      creditCardCount: state.transactions.filter((transaction) => transaction.sourceType === 'credit_card_statement').length,
+      upiCount: state.transactions.filter((transaction) => transaction.sourceType === 'upi_whatsapp').length,
+      upiReviewCount: state.transactions.filter(
+        (transaction) => transaction.sourceType === 'upi_whatsapp' && transaction.needsReview
+      ).length,
+    },
   };
 }
 
@@ -64,6 +81,7 @@ export function reassignTransactionCategory(
       categoryId: nextCategoryId,
       needsReview: false,
       reviewReason: null,
+      reviewReasons: [],
     };
   });
 
@@ -94,6 +112,7 @@ function groupTransactions(
     const transactionWithCategory = {
       ...transaction,
       categoryName: getCategoryById(state.categories, transaction.categoryId).name,
+      sourceBadge: transaction.sourceType === 'upi_whatsapp' ? 'UPI' : 'Card',
     };
     const existingGroup = groupedTransactions.get(dateLabel);
 

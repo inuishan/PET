@@ -20,15 +20,21 @@ test('Phase 1 onboarding screen keeps both create and join household wiring inta
 
 test('Phase 1 tab screens remain wired to dashboard and review-state models', () => {
   const dashboardSource = readAppFile(path.join('(tabs)', 'index.tsx'));
+  const settingsSource = readAppFile(path.join('(tabs)', 'settings.tsx'));
   const transactionsSource = readAppFile(path.join('(tabs)', 'transactions.tsx'));
 
   assert.match(dashboardSource, /loadDashboardSnapshot/);
   assert.match(dashboardSource, /createDashboardQueryKey/);
   assert.match(dashboardSource, /Needs review/);
+  assert.match(dashboardSource, /WhatsApp UPI/);
   assert.match(transactionsSource, /buildTransactionsScreenState/);
   assert.match(transactionsSource, /loadTransactionsSnapshot/);
   assert.match(transactionsSource, /saveTransactionCategoryAssignment/);
   assert.match(transactionsSource, /useQuery/);
   assert.match(transactionsSource, /useMutation/);
   assert.match(transactionsSource, /Needs review/);
+  assert.match(transactionsSource, /WhatsApp UPI/);
+  assert.match(settingsSource, /approve_whatsapp_participant|saveApprovedParticipant/);
+  assert.match(settingsSource, /revoke_whatsapp_participant|revokeApprovedParticipant/);
+  assert.match(settingsSource, /Approved participants/);
 });
