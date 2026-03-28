@@ -35,8 +35,25 @@ test('Phase 3 analytics loads a household-scoped snapshot from the server-owned 
           householdId: '11111111-1111-4111-8111-111111111111',
           insights: [
             {
+              evidencePayload: [
+                {
+                  label: 'Current month spend',
+                  metricKey: 'currentSpend',
+                  value: '13250.00',
+                },
+              ],
               estimatedMonthlyImpact: '1500.00',
               generatedAt: '2026-03-28T05:40:00.000Z',
+              generatedFrom: {
+                metrics: {
+                  currentSpend: '13250.00',
+                  previousSpend: '11250.00',
+                },
+                signalKey: 'category_overspending',
+                signalVersion: 'phase3b_v1',
+                source: 'deterministic',
+                supportingTransactionIds: ['txn-1', 'txn-2'],
+              },
               id: 'insight-1',
               recommendation: 'Reduce food delivery frequency by one order each week.',
               summary: 'Food delivery is up 18% versus the prior period.',
@@ -160,8 +177,25 @@ test('Phase 3 deep-report reads resolve through the household-scoped report RPC'
           id: 'report-1',
           insights: [
             {
+              evidencePayload: [
+                {
+                  label: 'Current month spend',
+                  metricKey: 'currentSpend',
+                  value: '13250.00',
+                },
+              ],
               estimatedMonthlyImpact: '1500.00',
               generatedAt: '2026-03-28T05:40:00.000Z',
+              generatedFrom: {
+                metrics: {
+                  currentSpend: '13250.00',
+                  previousSpend: '11250.00',
+                },
+                signalKey: 'category_overspending',
+                signalVersion: 'phase3b_v1',
+                source: 'deterministic',
+                supportingTransactionIds: ['txn-1', 'txn-2'],
+              },
               id: 'insight-1',
               recommendation: 'Reduce food delivery frequency by one order each week.',
               summary: 'Food delivery is up 18% versus the prior period.',
@@ -174,9 +208,11 @@ test('Phase 3 deep-report reads resolve through the household-scoped report RPC'
               {
                 body: 'Food delivery and late-night convenience purchases were the largest drivers this month.',
                 id: 'section-1',
+                insightIds: ['insight-1'],
                 title: 'What changed',
               },
             ],
+            summaryInsightIds: ['insight-1'],
           },
           periodEnd: '2026-03-31',
           periodStart: '2026-03-01',
