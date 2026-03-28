@@ -85,7 +85,9 @@ export function parseWhatsAppExpenseMessage(input: ParseExpenseMessageInput): Pa
       ? 'needs_review'
       : 'parsed',
     participantId: input.participant.id,
+    participantPhoneE164: input.participant.phoneE164,
     providerMessageId: input.providerMessageId,
+    providerSentAt: input.providerSentAt ?? null,
     reviewReasons: uniqueValues(reviewReasons),
     transactionDate,
     validationErrors,

@@ -284,6 +284,134 @@ test('handleWhatsAppIngestRequest reuses an already-processed message outcome', 
   assert.equal(body.data.alreadyProcessed, true);
 });
 
+test('handleWhatsAppIngestRequest dispatches an optional acknowledgement for successful posts', async () => {
+  const captured = {
+    classificationEvents: [],
+    notifications: [],
+    transactions: [],
+    updates: [],
+  };
+  const scheduledTasks = [];
+  const replyDispatches = [];
+  const request = new Request('http://localhost/functions/v1/whatsapp-ingest', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer internal-secret',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: 120,
+      confidence: 0.94,
+      currency: 'INR',
+      existingParseMetadata: {
+        phoneNumberId: 'phone-number-id',
+      },
+      householdId,
+      merchantNormalized: 'zepto',
+      merchantRaw: 'Zepto',
+      messageId,
+      note: 'milk',
+      ownerMemberId,
+      ownerScope: 'member',
+      parseStatus: 'parsed',
+      participantId,
+      participantPhoneE164: '+919999888877',
+      providerMessageId: 'wamid.message-1',
+      providerSentAt: '2026-03-27T09:30:00.000Z',
+      reviewReasons: [],
+      transactionDate: '2026-03-27',
+      validationErrors: [],
+    }),
+  });
+
+  const response = await handleWhatsAppIngestRequest(request, {
+    internalAuthToken: 'internal-secret',
+    replyDispatcher: {
+      async dispatchMessage(input) {
+        replyDispatches.push(input);
+      },
+    },
+    repository: createRepositoryStub(captured),
+    scheduleBackgroundTask(task) {
+      scheduledTasks.push(task);
+    },
+  });
+
+  await Promise.allSettled(scheduledTasks);
+
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.data.outcome, 'posted');
+  assert.equal(replyDispatches.length, 1);
+  assert.deepEqual(replyDispatches[0], {
+    amount: 120,
+    currency: 'INR',
+    merchantRaw: 'Zepto',
+    outcome: 'posted',
+    phoneNumberId: 'phone-number-id',
+    providerMessageId: 'wamid.message-1',
+    providerSentAt: '2026-03-27T09:30:00.000Z',
+    recipientPhoneE164: '+919999888877',
+  });
+});
+
+test('handleWhatsAppIngestRequest skips acknowledgements when reply metadata is incomplete', async () => {
+  const captured = {
+    classificationEvents: [],
+    notifications: [],
+    transactions: [],
+    updates: [],
+  };
+  const replyDispatches = [];
+  const request = new Request('http://localhost/functions/v1/whatsapp-ingest', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer internal-secret',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: 120,
+      confidence: 0.94,
+      currency: 'INR',
+      existingParseMetadata: {},
+      householdId,
+      merchantNormalized: 'zepto',
+      merchantRaw: 'Zepto',
+      messageId,
+      note: 'milk',
+      ownerMemberId,
+      ownerScope: 'member',
+      parseStatus: 'parsed',
+      participantId,
+      participantPhoneE164: '+919999888877',
+      providerMessageId: 'wamid.message-1',
+      providerSentAt: '2026-03-27T09:30:00.000Z',
+      reviewReasons: [],
+      transactionDate: '2026-03-27',
+      validationErrors: [],
+    }),
+  });
+
+  const response = await handleWhatsAppIngestRequest(request, {
+    internalAuthToken: 'internal-secret',
+    replyDispatcher: {
+      async dispatchMessage(input) {
+        replyDispatches.push(input);
+      },
+    },
+    repository: createRepositoryStub(captured),
+  });
+
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.data.outcome, 'posted');
+  assert.equal(replyDispatches.length, 0);
+});
+
 function createRepositoryStub(captured, overrides = {}) {
   return {
     async classifyParsedTransaction(input) {
