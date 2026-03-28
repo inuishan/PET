@@ -57,6 +57,12 @@ export function buildPhase1RuntimeValidationReport(input) {
 
 function parseMobileRuntimeEnv(environment, errors) {
   return compactRecord({
+    phase1AlertPushTopicPrefix: readRequiredString(
+      environment,
+      'EXPO_PUBLIC_PHASE1_ALERT_PUSH_TOPIC_PREFIX',
+      errors,
+      'Mobile',
+    ),
     supabaseAnonKey: readRequiredString(
       environment,
       'EXPO_PUBLIC_SUPABASE_ANON_KEY',
@@ -209,6 +215,16 @@ function validateCrossSystemRuntimeConfig(config, errors, warnings) {
       !== normalizeUrlForComparison(config.supabase.supabaseUrl)
   ) {
     errors.push('Mobile EXPO_PUBLIC_SUPABASE_URL must match Supabase SUPABASE_URL.');
+  }
+
+  if (
+    config.mobile.phase1AlertPushTopicPrefix
+    && config.supabase.alertPushTopicPrefix
+    && config.mobile.phase1AlertPushTopicPrefix !== config.supabase.alertPushTopicPrefix
+  ) {
+    errors.push(
+      'Mobile EXPO_PUBLIC_PHASE1_ALERT_PUSH_TOPIC_PREFIX must match Supabase PHASE1_ALERT_PUSH_TOPIC_PREFIX.',
+    );
   }
 
   if (

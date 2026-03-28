@@ -7,6 +7,10 @@ function readAppFile(relativePath) {
   return fs.readFileSync(path.join(process.cwd(), 'apps', 'mobile', 'src', 'app', relativePath), 'utf8');
 }
 
+function readSourceFile(relativePath) {
+  return fs.readFileSync(path.join(process.cwd(), 'apps', 'mobile', 'src', relativePath), 'utf8');
+}
+
 test('Phase 1 onboarding screen keeps both create and join household wiring intact', () => {
   const source = readAppFile(path.join('(onboarding)', 'household.tsx'));
 
@@ -53,4 +57,10 @@ test('Phase 1 tab screens remain wired to dashboard and review-state models', ()
   assert.match(settingsSource, /approve_whatsapp_participant|saveApprovedParticipant/);
   assert.match(settingsSource, /revoke_whatsapp_participant|revokeApprovedParticipant/);
   assert.match(settingsSource, /Approved participants/);
+});
+
+test('Phase 1 app providers mount the push registration boundary', () => {
+  const providersSource = readSourceFile(path.join('providers', 'app-providers.tsx'));
+
+  assert.match(providersSource, /Phase1PushRegistrationBoundary/);
 });

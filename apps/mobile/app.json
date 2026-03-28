@@ -25,6 +25,9 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       "expo-secure-store",
       [
         "expo-splash-screen",

@@ -5,7 +5,9 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from
 import { useAuthSession } from '@/features/auth/auth-session';
 import type { SettingsNotificationType, SettingsSnapshot } from '@/features/settings/settings-model';
 import {
+  createNotificationPreferencesQueryKey,
   createSettingsQueryKey,
+  loadNotificationPreferences,
   loadSettingsSnapshot,
   revokeApprovedParticipant,
   saveApprovedParticipant,
@@ -27,6 +29,7 @@ export default function SettingsScreen() {
     session.status === 'signed_in' && session.household.status === 'ready' ? session.household.householdId : null;
   const userId = session.status === 'signed_in' ? session.userId : null;
   const settingsQueryKey = createSettingsQueryKey(householdId, userId);
+  const notificationPreferencesQueryKey = createNotificationPreferencesQueryKey(householdId, userId);
   const settingsQuery = useQuery({
     enabled: householdId !== null && userId !== null,
     queryFn: async () => {
@@ -50,6 +53,9 @@ export default function SettingsScreen() {
       notificationType: SettingsNotificationType;
     },
     {
+      previousNotificationPreferences:
+        | Awaited<ReturnType<typeof loadNotificationPreferences>>
+        | undefined;
       previousSettings: SettingsSnapshot | undefined;
     }
   >({
@@ -69,7 +75,11 @@ export default function SettingsScreen() {
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: settingsQueryKey });
+      await queryClient.cancelQueries({ queryKey: notificationPreferencesQueryKey });
       const previousSettings = queryClient.getQueryData<SettingsSnapshot>(settingsQueryKey);
+      const previousNotificationPreferences = queryClient.getQueryData<
+        Awaited<ReturnType<typeof loadNotificationPreferences>>
+      >(notificationPreferencesQueryKey);
 
       queryClient.setQueryData<SettingsSnapshot | undefined>(settingsQueryKey, (currentSettings) => {
         if (!currentSettings) {
@@ -93,20 +103,50 @@ export default function SettingsScreen() {
           }),
         };
       });
+      queryClient.setQueryData<
+        Awaited<ReturnType<typeof loadNotificationPreferences>> | undefined
+      >(notificationPreferencesQueryKey, (currentPreferences) => {
+        if (!currentPreferences) {
+          return currentPreferences;
+        }
+
+        return currentPreferences.map((preference) => {
+          if (
+            preference.channel !== variables.channel ||
+            preference.notificationType !== variables.notificationType
+          ) {
+            return preference;
+          }
+
+          return {
+            ...preference,
+            enabled: variables.enabled,
+          };
+        });
+      });
 
       return {
+        previousNotificationPreferences,
         previousSettings,
       };
     },
     onError: (_error, _variables, context) => {
       if (!context?.previousSettings) {
+        if (context?.previousNotificationPreferences) {
+          queryClient.setQueryData(notificationPreferencesQueryKey, context.previousNotificationPreferences);
+        }
+
         return;
       }
 
       queryClient.setQueryData(settingsQueryKey, context.previousSettings);
+      if (context.previousNotificationPreferences) {
+        queryClient.setQueryData(notificationPreferencesQueryKey, context.previousNotificationPreferences);
+      }
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: settingsQueryKey });
+      await queryClient.invalidateQueries({ queryKey: notificationPreferencesQueryKey });
     },
   });
   const saveApprovedParticipantMutation = useMutation({

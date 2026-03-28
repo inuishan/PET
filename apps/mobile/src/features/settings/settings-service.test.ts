@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  createNotificationPreferencesQueryKey,
+  loadNotificationPreferences,
   loadSettingsSnapshot,
   revokeApprovedParticipant,
   saveApprovedParticipant,
@@ -362,6 +364,91 @@ describe('loadSettingsSnapshot', () => {
         status: 'needs_setup',
       },
     });
+  });
+});
+
+describe('loadNotificationPreferences', () => {
+  it('loads the lightweight notification-preferences view used by push registration', async () => {
+    const notificationPreferencesBuilder = createSelectBuilder([
+      {
+        channel: 'push',
+        enabled: false,
+        notification_type: 'statement_parse_failure',
+      },
+      {
+        channel: 'push',
+        enabled: true,
+        notification_type: 'review_queue_escalation',
+      },
+    ]);
+    const client: SettingsClient = {
+      from: vi.fn((table) => ({
+        select: vi.fn(() => {
+          if (table !== 'notification_preferences') {
+            throw new Error(`Unexpected table ${table}`);
+          }
+
+          return notificationPreferencesBuilder;
+        }),
+      })),
+      rpc: vi.fn(),
+    };
+
+    await expect(
+      loadNotificationPreferences(client, {
+        householdId: '11111111-1111-4111-8111-111111111111',
+        userId: '22222222-2222-4222-8222-222222222222',
+      })
+    ).resolves.toEqual([
+      {
+        channel: 'push',
+        description: 'Surface parser failures within the household app.',
+        enabled: false,
+        id: 'push-parse-failures',
+        label: 'Parser failures',
+        notificationType: 'statement_parse_failure',
+      },
+      {
+        channel: 'email',
+        description: 'Send a summary when a statement sync has been blocked for over an hour.',
+        enabled: false,
+        id: 'email-sync-escalations',
+        label: 'Sync escalations',
+        notificationType: 'statement_sync_blocked',
+      },
+      {
+        channel: 'push',
+        description: 'Notify when new rows land with needs review turned on.',
+        enabled: true,
+        id: 'push-review-queue',
+        label: 'Review queue alerts',
+        notificationType: 'review_queue_escalation',
+      },
+    ]);
+
+    expect(notificationPreferencesBuilder.eq).toHaveBeenCalledWith(
+      'household_id',
+      '11111111-1111-4111-8111-111111111111'
+    );
+    expect(notificationPreferencesBuilder.eq).toHaveBeenCalledWith(
+      'user_id',
+      '22222222-2222-4222-8222-222222222222'
+    );
+  });
+});
+
+describe('createNotificationPreferencesQueryKey', () => {
+  it('creates a stable query key for push preference sync', () => {
+    expect(
+      createNotificationPreferencesQueryKey(
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222'
+      )
+    ).toEqual([
+      'notification-preferences',
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    ]);
   });
 });
 
