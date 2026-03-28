@@ -1,6 +1,6 @@
 # Phase 4 Linear Issue Drafts
 
-These issue drafts mirror the existing PET Linear structure so the Phase 4 learning-and-trust scope is preserved in-repo alongside the PRD and Stitch references.
+These issue drafts mirror the existing PET Linear structure so the Phase 4 learning-and-trust scope is preserved in-repo alongside the PRD, the saved Phase 4 implementation plan, and the Stitch HTML/screenshot references.
 
 ## Umbrella Issue
 
@@ -11,9 +11,9 @@ These issue drafts mirror the existing PET Linear structure so the Phase 4 learn
 - `Phase 4`
 
 ### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
-Design references
+Required design references (HTML and screenshots)
 
 - `stitch-dashboard-html/dashboard-with-spending-alerts.html`
 - `stitch-dashboard-html/updated-dashboard-with-annotations.html`
@@ -29,9 +29,11 @@ Purpose
 Success criteria
 
 - User corrections are captured as explicit, auditable learning signals instead of hidden side effects.
-- Merchant alias memory is household-scoped, explainable, and reused before falling back to fresh LLM classification.
+- Merchant alias memory is household-scoped, explainable, reused before fresh LLM classification, and becomes household-wide immediately after an accepted correction.
 - Confidence scoring better separates high-confidence automation from work that should stay in review.
 - Recurring-charge detection becomes more accurate and more useful in the dashboard, analytics, and transaction review flows.
+- Learned behavior only affects new ingests and does not auto-rewrite historical transactions.
+- High-confidence recurring findings can create alerts/tasks automatically, while lower-confidence findings stay reviewable.
 - Trust-sensitive UI changes remain aligned with the Stitch HTML/screenshots and continue to explain why the product made a recommendation or classification.
 
 Execution model
@@ -61,13 +63,14 @@ Child issue set
 - `Phase 4`
 
 #### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
 Scope
 
 - Add the server-owned feedback model for user corrections, confirmations, dismissals, and overrides across category, merchant normalization, owner attribution, and review outcomes.
 - Preserve auditability so the product can distinguish raw ingestion output from later human corrections and approved learned behavior.
 - Expose explicit read/write boundaries for correction events so downstream classification, confidence scoring, and recurring detection can consume trusted signals without mutating historical evidence.
+- Keep learning effects forward-looking: learning events may affect new ingests, but must not silently backfill historical transactions.
 
 Execution order
 
@@ -96,13 +99,14 @@ Definition of done
 - `Phase 4`
 
 #### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
 Scope
 
 - Build merchant alias memory from accepted household corrections and deterministic historical matches.
 - Prefer trusted alias and classification reuse before fresh LLM inference where the evidence is strong enough.
 - Handle collisions, ambiguous aliases, and household-specific merchant behavior conservatively so the system does not overlearn bad mappings.
+- Accepted corrections become reusable household memory immediately; no secondary approval step is required before the next matching ingest can benefit.
 
 Execution order
 
@@ -117,6 +121,7 @@ Definition of done
 - Merchant aliases can be learned from accepted corrections and reused deterministically.
 - Classification prefers trusted household memory before new LLM work when the evidence is sufficient.
 - Conflicting or weak alias matches degrade safely into review or fallback inference.
+- New ingests can benefit from accepted household corrections immediately.
 - Relevant tests pass.
 - Code has been simplified before commit.
 - Review has been completed and findings addressed.
@@ -131,7 +136,7 @@ Definition of done
 - `Phase 4`
 
 #### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
 Scope
 
@@ -167,9 +172,9 @@ Definition of done
 - `Phase 4`
 
 #### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
-Required design references
+Required design references (HTML and screenshots)
 
 - `stitch-dashboard-html/transaction-history.html`
 - `stitch-dashboard-html/updated-dashboard-with-annotations.html`
@@ -212,9 +217,9 @@ Definition of done
 - `Phase 4`
 
 #### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
-Required design references
+Required design references (HTML and screenshots)
 
 - `stitch-dashboard-html/analytics-expense-focus.html`
 - `stitch-dashboard-html/dashboard-with-spending-alerts.html`
@@ -228,6 +233,7 @@ Scope
 - Improve recurring-charge detection using better merchant memory, transaction grouping, cadence heuristics, and correction feedback.
 - Surface recurring-charge findings and trust-oriented recommendations in dashboard and analytics flows without overstating certainty.
 - Connect recurring findings back to supporting transactions so the user can validate, keep, cancel, or review the detected pattern.
+- Automatically create alerts/tasks only when the recurring finding clears the high-confidence threshold.
 
 Execution order
 
@@ -241,6 +247,7 @@ Definition of done
 
 - Recurring-charge detection is more accurate and auditable than the current baseline.
 - Dashboard and analytics surfaces expose recurring findings with clear evidence and follow-through actions.
+- High-confidence recurring findings can create alerts/tasks automatically without over-triggering on weaker signals.
 - The UI remains aligned with the referenced Stitch HTML/screenshots.
 - Relevant tests pass.
 - Code has been simplified before commit.
@@ -256,7 +263,7 @@ Definition of done
 - `Phase 4`
 
 #### Description
-Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust)
+Source: `docs/expense-tracker-prd.md` (Phase 4: Learning and Trust) and `docs/phase-4-plan.md`
 
 Scope
 
