@@ -71,8 +71,24 @@ export type AnalyticsSnapshot = {
 };
 
 export type AnalyticsInsight = {
+  evidencePayload: Array<{
+    context: string | null;
+    label: string;
+    metricKey: string;
+    transactionId: string | null;
+    value: number | string;
+  }>;
   estimatedMonthlyImpact: number | null;
   generatedAt: string;
+  generatedFrom: {
+    metrics: Record<string, number | string | null>;
+    periodEnd?: string | null;
+    periodStart?: string | null;
+    signalKey: string;
+    signalVersion: string;
+    source: 'deterministic';
+    supportingTransactionIds: string[];
+  };
   id: string;
   recommendation: string;
   summary: string;
@@ -107,8 +123,10 @@ export type AnalyticsReport = {
     sections: Array<{
       body: string;
       id: string;
+      insightIds: string[];
       title: string;
     }>;
+    summaryInsightIds: string[];
   };
   periodEnd: string;
   periodStart: string;
@@ -278,10 +296,33 @@ function readAnalyticsComparison(input: unknown): AnalyticsSnapshot['comparison'
 
 function readAnalyticsInsight(input: unknown): AnalyticsInsight {
   const insight = readRecord(input);
+  const generatedFrom = readRecord(insight.generatedFrom);
 
   return {
+    evidencePayload: readArray(insight.evidencePayload).map((entry) => {
+      const evidence = readRecord(entry);
+
+      return {
+        context: readNullableString(evidence.context, 'context'),
+        label: readRequiredString(evidence.label, 'label'),
+        metricKey: readRequiredString(evidence.metricKey, 'metricKey'),
+        transactionId: readNullableString(evidence.transactionId, 'transactionId'),
+        value: readLooseScalar(evidence.value, 'value'),
+      };
+    }),
     estimatedMonthlyImpact: readNullableNumber(insight.estimatedMonthlyImpact, 'estimatedMonthlyImpact'),
     generatedAt: readRequiredString(insight.generatedAt, 'generatedAt'),
+    generatedFrom: {
+      metrics: readLooseRecord(generatedFrom.metrics),
+      periodEnd: readNullableString(generatedFrom.periodEnd, 'periodEnd'),
+      periodStart: readNullableString(generatedFrom.periodStart, 'periodStart'),
+      signalKey: readRequiredString(generatedFrom.signalKey, 'signalKey'),
+      signalVersion: readRequiredString(generatedFrom.signalVersion, 'signalVersion'),
+      source: readInsightSource(generatedFrom.source, 'source'),
+      supportingTransactionIds: readArray(generatedFrom.supportingTransactionIds).map((entry) =>
+        readRequiredString(entry, 'supportingTransactionIds')
+      ),
+    },
     id: readRequiredString(insight.id, 'id'),
     recommendation: readRequiredString(insight.recommendation, 'recommendation'),
     summary: readRequiredString(insight.summary, 'summary'),
@@ -323,9 +364,11 @@ function readAnalyticsReport(input: unknown): AnalyticsReport {
         return {
           body: readRequiredString(section.body, 'body'),
           id: readRequiredString(section.id, 'id'),
+          insightIds: readArray(section.insightIds).map((item) => readRequiredString(item, 'insightIds')),
           title: readRequiredString(section.title, 'title'),
         };
       }),
+      summaryInsightIds: readArray(payload.summaryInsightIds).map((item) => readRequiredString(item, 'summaryInsightIds')),
     },
     periodEnd: readRequiredString(report.periodEnd, 'periodEnd'),
     periodStart: readRequiredString(report.periodStart, 'periodStart'),
@@ -396,6 +439,14 @@ function readInsightType(input: unknown, field: string): AnalyticsInsight['type'
   throw new Error(`Expected ${field} to be a supported analytics insight type.`);
 }
 
+function readInsightSource(input: unknown, field: string): AnalyticsInsight['generatedFrom']['source'] {
+  if (input === 'deterministic') {
+    return input;
+  }
+
+  throw new Error(`Expected ${field} to be a supported analytics insight source.`);
+}
+
 function readNumber(input: unknown, field: string) {
   if (typeof input === 'number' && Number.isFinite(input)) {
     return input;
@@ -426,6 +477,31 @@ function readNullableString(input: unknown, field: string) {
   }
 
   return readRequiredString(input, field);
+}
+
+function readLooseRecord(input: unknown): Record<string, number | string | null> {
+  const record = readRecord(input);
+
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, readLooseScalar(value, key)]),
+  );
+}
+
+function readLooseScalar(input: unknown, field: string): number | string | null {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return input;
+  }
+
+  if (typeof input === 'string' && input.trim().length > 0) {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? parsed : input.trim();
+  }
+
+  if (input === null || input === undefined) {
+    return null;
+  }
+
+  throw new Error(`Expected ${field} to be numeric or textual.`);
 }
 
 function readOwnerScope(input: unknown, field: string): AnalyticsSnapshot['spendByPerson'][number]['ownerScope'] {
